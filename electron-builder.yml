@@ -1,0 +1,27 @@
+appId: dev.akodo.app
+productName: Akodo
+directories:
+  output: release
+files:
+  - dist/**/*
+  - package.json
+  - "!node_modules/**/*"
+win:
+  target:
+    - nsis
+  icon: assets/icon.ico
+mac:
+  target:
+    - dmg
+    - zip
+  icon: assets/icon.icns
+  category: public.app-category.developer-tools
+linux:
+  target:
+    - AppImage
+    - deb
+  icon: assets/icon.png
+  category: Development
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
