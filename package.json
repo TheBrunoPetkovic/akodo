@@ -2,6 +2,7 @@
   "name": "akodo",
   "version": "0.1.0",
   "description": "Open source AI agent orchestrator — from prompt to production",
+  "type": "module",
   "main": "dist/main/index.js",
   "author": "Akodo Contributors",
   "license": "MIT",
