@@ -12,10 +12,12 @@
     "url": "https://github.com/akodo-dev/akodo"
   },
   "scripts": {
-    "dev": "vite",
+    "dev": "concurrently \"vite\" \"node scripts/wait-for-vite.js && cross-env NODE_ENV=development electron .\"",
+    "dev:vite": "vite",
+    "dev:electron": "cross-env NODE_ENV=development electron .",
     "build": "tsc -p tsconfig.main.json && vite build && electron-builder",
     "build:renderer": "vite build",
-    "build:main": "tsc -p tsconfig.main.json",
+    "build:main": "tsc -p tsconfig.main.json && node -e \"require('fs').writeFileSync('dist/main/package.json', '{\\\"type\\\":\\\"commonjs\\\"}')\"",
     "preview": "vite preview",
     "lint": "eslint src --ext .ts,.tsx",
     "typecheck": "tsc --noEmit",
@@ -30,6 +32,8 @@
     "@types/react-dom": "^18.3.0",
     "@vitejs/plugin-react": "^4.3.0",
     "autoprefixer": "^10.4.20",
+    "concurrently": "^10.0.5",
+    "cross-env": "^10.1.0",
     "electron": "^33.0.0",
     "electron-builder": "^25.1.0",
     "postcss": "^8.4.47",
