@@ -20,3 +20,32 @@
 - [ ] Creating subagent and linking agents so they can talk
 - [ ] Subagents node view and entering subagent chat and being able to prompt it
 - [ ] Agents can open browser by themselves and control it so they can test the changes they are doing in real time
+
+## Streaming
+- [ ] Streaming responses instead of waiting for full completion
+
+## Data
+- [ ] Export/import conversations
+- [ ] Cloud sync (optional)
+
+## Security
+- [ ] Sandboxing for code execution
+- [ ] API key encryption in storage
+
+## Developer Experience
+- [ ] Keyboard shortcuts
+- [ ] Command palette (Ctrl+K style)
+- [ ] Plugin system
+
+## Testing
+- [ ] Unit tests
+- [ ] E2E tests
+- [ ] CI/CD pipeline
+
+## Distribution
+- [ ] Auto-updates
+- [ ] Cross-platform builds (Windows, Mac, Linux)
+
+## Documentation
+- [ ] User guide
+- [ ] Contributing guidelines
