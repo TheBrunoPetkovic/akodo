@@ -51,15 +51,26 @@ export class OpenCodeServerAdapter {
         body: JSON.stringify({ title: input.outcomeId }),
       });
       this.runs.set(runId, { sessionId: session.id, projectPath: input.projectPath });
-      const unsubscribe = this.subscribeToSession(session.id, input.projectPath, runId, input.outcomeId);
+      let resolveQuestion: ((question: string) => void) | undefined;
+      const question = new Promise<string>((resolve) => { resolveQuestion = resolve; });
+      const unsubscribe = this.subscribeToSession(session.id, input.projectPath, runId, input.outcomeId, (questionText) => resolveQuestion?.(questionText));
       this.emit({ type: "started", runId, outcomeId: input.outcomeId });
 
       try {
-        const response = await this.request<OpenCodeMessageResponse>(`/session/${session.id}/message`, input.projectPath, {
+        const response = this.request<OpenCodeMessageResponse>(`/session/${session.id}/message`, input.projectPath, {
           method: "POST",
           body: JSON.stringify({ parts: [{ type: "text", text: input.prompt }] }),
         });
-        const text = (response.parts ?? [])
+        const result = await Promise.race([
+          response.then((value) => ({ kind: "response" as const, value })),
+          question.then((value) => ({ kind: "question" as const, value })),
+        ]);
+        if (result.kind === "question") {
+          await this.request(`/session/${session.id}/abort`, input.projectPath, { method: "POST" }).catch(() => undefined);
+          this.emit({ type: "completed", runId, outcomeId: input.outcomeId, exitCode: 0 });
+          return `[[AKODO_NEEDS_INPUT]]\n${result.value}`;
+        }
+        const text = (result.value.parts ?? [])
           .filter((part) => part.type === "text" && part.text)
           .map((part) => part.text)
           .join("\n") || "OpenCode completed without text output.";
@@ -132,7 +143,13 @@ export class OpenCodeServerAdapter {
     return response.json() as Promise<T>;
   }
 
-  private subscribeToSession(sessionId: string, projectPath: string, runId: string, outcomeId: string): () => void {
+  private subscribeToSession(
+    sessionId: string,
+    projectPath: string,
+    runId: string,
+    outcomeId: string,
+    onQuestion: (question: string) => void
+  ): () => void {
     let response: http.IncomingMessage | null = null;
     let shouldClose = false;
     const request = http.get(`${this.baseUrl}/event?directory=${encodeURIComponent(projectPath)}`, {
@@ -152,6 +169,8 @@ export class OpenCodeServerAdapter {
         for (const frame of frames) {
           const data = frame.split("\n").find((line) => line.startsWith("data:"))?.slice(5).trim();
           if (!data || !data.includes(sessionId)) continue;
+          const question = this.questionFromEvent(data);
+          if (question) onQuestion(question);
           this.emit({ type: "output", runId, outcomeId, text: this.describeEvent(data) });
         }
       });
@@ -169,6 +188,23 @@ export class OpenCodeServerAdapter {
       return event.properties?.part?.text || event.type || data;
     } catch {
       return data;
+    }
+  }
+
+  private questionFromEvent(data: string): string | null {
+    try {
+      const event = JSON.parse(data) as {
+        properties?: { part?: { type?: string; tool?: string; state?: { status?: string; input?: { questions?: Array<{ question?: string; options?: Array<{ label?: string; description?: string }> }> } } } };
+      };
+      const part = event.properties?.part;
+      if (part?.type !== "tool" || part.tool !== "question" || part.state?.status !== "running") return null;
+      const questions = part.state.input?.questions ?? [];
+      return questions.map((item) => {
+        const options = item.options?.map((option) => `- ${option.label}${option.description ? ` — ${option.description}` : ""}`).join("\n");
+        return `${item.question ?? "OpenCode needs an answer."}${options ? `\n${options}` : ""}`;
+      }).join("\n\n") || "OpenCode needs your input before it can continue.";
+    } catch {
+      return null;
     }
   }
 

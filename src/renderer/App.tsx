@@ -297,6 +297,17 @@ function App() {
         projectPath: prepared.worktreePath,
         prompt: buildOpenCodePrompt(outcome, instruction),
       });
+      if (reply.startsWith("[[AKODO_NEEDS_INPUT]]")) {
+        const message = reply.replace("[[AKODO_NEEDS_INPUT]]", "").trim();
+        setOutcomes((previous) => previous.map((item) => item.id === outcomeId ? {
+          ...item,
+          messages: [...updatedMessages, { role: "assistant", content: message }],
+          status: "Needs input",
+          events: [...item.events, makeEvent("agent.question", "OpenCode needs your input before it can continue")],
+        } : item));
+        if (firstExec) updateExecution(outcomeId, firstExec.id, "attention");
+        return;
+      }
       setOutcomes((previous) => previous.map((item) => item.id === outcomeId ? {
         ...item,
         messages: [...updatedMessages, { role: "assistant", content: reply }],
