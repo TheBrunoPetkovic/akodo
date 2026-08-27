@@ -1009,7 +1009,7 @@ function App() {
             <div ref={sidebarScrollRef} onScroll={updateSidebarScrollIntent} className="flex-1 overflow-y-auto select-text p-4">
               {rightSidebar === "conversation" && (
                 currentLiveOutput ? (
-                  <pre className="whitespace-pre-wrap break-words rounded-lg border border-ctp-surface0 bg-ctp-base p-3 text-xs leading-relaxed text-ctp-subtext1 font-mono">{currentLiveOutput}</pre>
+                  <pre className="w-full max-w-full whitespace-pre-wrap break-words rounded-lg border border-ctp-surface0 bg-ctp-base p-3 text-xs leading-relaxed text-ctp-subtext1 font-mono">{currentLiveOutput}</pre>
                 ) : (
                   <div className="text-sm text-ctp-overlay0">Live output will appear when OpenCode starts working.</div>
                 )
