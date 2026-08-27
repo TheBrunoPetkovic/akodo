@@ -90,6 +90,7 @@ function App() {
   const [outcomes, setOutcomes] = useState<Outcome[]>(loadOutcomes);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; index: number } | null>(null);
   const [renameIndex, setRenameIndex] = useState<number | null>(null);
+  const [deleteIndex, setDeleteIndex] = useState<number | null>(null);
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
@@ -1044,7 +1045,7 @@ function App() {
           onClose={() => setContextMenu(null)}
           items={[
             { label: "Rename", onClick: () => setRenameIndex(contextMenu.index) },
-            { label: "Delete", onClick: () => deleteOutcome(contextMenu.index), danger: true },
+            { label: "Delete", onClick: () => setDeleteIndex(contextMenu.index), danger: true },
           ]}
         />
       )}
@@ -1054,6 +1055,18 @@ function App() {
           onRename={(newName) => renameOutcome(renameIndex, newName)}
           onClose={() => setRenameIndex(null)}
         />
+      )}
+      {deleteIndex !== null && outcomes[deleteIndex] && (
+        <div className="fixed inset-0 z-[300] flex items-center justify-center bg-black/40 backdrop-blur-sm" onClick={() => setDeleteIndex(null)}>
+          <div className="w-[380px] rounded-xl border border-ctp-surface0 bg-ctp-mantle p-5" onClick={(event) => event.stopPropagation()}>
+            <h2 className="text-sm font-medium text-ctp-text">Delete outcome?</h2>
+            <p className="mt-2 text-sm text-ctp-subtext1">This permanently removes <span className="font-medium text-ctp-text">{outcomes[deleteIndex].name}</span> and its local conversation history from Akodo.</p>
+            <div className="mt-4 flex justify-end gap-2">
+              <button onClick={() => setDeleteIndex(null)} className="rounded-lg px-3 py-1.5 text-sm text-ctp-overlay1 transition-colors hover:bg-ctp-surface0 hover:text-ctp-text">Cancel</button>
+              <button onClick={() => { deleteOutcome(deleteIndex); setDeleteIndex(null); }} className="rounded-lg bg-ctp-red px-3 py-1.5 text-sm font-medium text-ctp-crust transition-opacity hover:opacity-90">Delete</button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
