@@ -104,6 +104,7 @@ function App() {
   const [executions, setExecutions] = useState<Record<string, AgentExecution[]>>({});
   const [liveOutput, setLiveOutput] = useState<Record<string, string>>({});
   const [questionAnswers, setQuestionAnswers] = useState<Record<string, string[][]>>({});
+  const [customQuestionAnswers, setCustomQuestionAnswers] = useState<Record<string, string[]>>({});
   const [decisionErrors, setDecisionErrors] = useState<Record<string, string>>({});
   const [submittingDecisionFor, setSubmittingDecisionFor] = useState<string | null>(null);
   const outcomeCountRef = parseInt(localStorage.getItem("akodo-outcome-count") ?? "0", 10);
@@ -135,6 +136,7 @@ function App() {
     }
     if (event.type === "question" && event.question) {
       setQuestionAnswers((previous) => ({ ...previous, [event.outcomeId]: event.question!.questions.map(() => []) }));
+      setCustomQuestionAnswers((previous) => ({ ...previous, [event.outcomeId]: event.question!.questions.map(() => "") }));
       setOutcomes((previous) => previous.map((outcome) => outcome.id === event.outcomeId ? {
         ...outcome,
         status: "Needs input",
@@ -488,6 +490,21 @@ function App() {
       answers[questionIndex] = multiple
         ? (current.includes(label) ? current.filter((item) => item !== label) : [...current, label])
         : [label];
+      return { ...previous, [outcome.id]: answers };
+    });
+  };
+
+  const updateCustomQuestionAnswer = (outcome: Outcome, questionIndex: number, value: string, multiple: boolean) => {
+    const previousCustomAnswer = customQuestionAnswers[outcome.id]?.[questionIndex] ?? "";
+    setCustomQuestionAnswers((previous) => {
+      const answers = [...(previous[outcome.id] ?? [])];
+      answers[questionIndex] = value;
+      return { ...previous, [outcome.id]: answers };
+    });
+    setQuestionAnswers((previous) => {
+      const answers = [...(previous[outcome.id] ?? [])];
+      const current = (answers[questionIndex] ?? []).filter((answer) => answer !== previousCustomAnswer);
+      answers[questionIndex] = value ? (multiple ? [...current, value] : [value]) : current;
       return { ...previous, [outcome.id]: answers };
     });
   };
@@ -856,6 +873,7 @@ function App() {
                       <div className="space-y-3">
                         {currentOutcome.question.questions.map((question, questionIndex) => {
                           const selected = questionAnswers[currentOutcome.id]?.[questionIndex] ?? [];
+                          const customAnswer = customQuestionAnswers[currentOutcome.id]?.[questionIndex] ?? "";
                           return (
                             <div key={`${currentOutcome.question!.requestId}-${questionIndex}`} className="space-y-2">
                               <div className="text-sm text-ctp-text">{question.question}</div>
@@ -874,6 +892,16 @@ function App() {
                                     </button>
                                   );
                                 })}
+                                <label className={`block w-full rounded-xl border px-3 py-2 text-left text-xs transition-colors ${customAnswer && selected.includes(customAnswer) ? "border-ctp-mauve bg-ctp-mauve/15 text-ctp-text" : "border-ctp-surface0 bg-ctp-base text-ctp-subtext1 hover:bg-ctp-surface0"}`}>
+                                  <div className="mb-1 font-medium">Type your answer</div>
+                                  <input
+                                    type="text"
+                                    value={customAnswer}
+                                    onChange={(event) => updateCustomQuestionAnswer(currentOutcome, questionIndex, event.target.value, Boolean(question.multiple))}
+                                    placeholder="Write a custom answer…"
+                                    className="w-full rounded-lg border border-ctp-surface0 bg-ctp-mantle px-2 py-1.5 text-xs text-ctp-text placeholder-ctp-overlay0 focus:border-ctp-mauve focus:outline-none"
+                                  />
+                                </label>
                               </div>
                             </div>
                           );
