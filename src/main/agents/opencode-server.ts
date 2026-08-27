@@ -130,7 +130,7 @@ export class OpenCodeServerAdapter {
     while (Date.now() < deadline) {
       try {
         const statuses = await this.sessionStatus(projectPath);
-        if (statuses[sessionId]?.type === "idle") {
+        if (!statuses[sessionId] || statuses[sessionId]?.type === "idle") {
           const messages = await this.request<OpenCodeSessionMessage[]>(`/session/${sessionId}/message`, projectPath, { method: "GET" }, true);
           const reply = [...messages].reverse().find((message) => message.info?.role === "assistant");
           const text = (reply?.parts ?? [])
