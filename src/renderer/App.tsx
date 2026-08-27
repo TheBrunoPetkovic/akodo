@@ -550,7 +550,6 @@ function App() {
         <div className="flex-1 flex flex-col rounded-xl border border-ctp-surface0 bg-ctp-mantle ml-[5px] mr-[5px] overflow-hidden">
           {currentOutcome ? (
             <>
-              <div className="flex-1 overflow-y-auto select-text">
                 <div className="border-b border-ctp-surface0 px-4 py-3">
                   <div className="flex items-center justify-between gap-3">
                     <h2 className="text-lg font-medium text-ctp-text truncate">{currentOutcome.name}</h2>
@@ -572,6 +571,7 @@ function App() {
                   </div>
                 </div>
 
+                <div className="flex-1 overflow-y-auto select-text">
                 <div className="hidden px-4 py-3 border-b border-ctp-surface0">
                   <div className="flex items-center justify-between gap-3">
                     <div className="min-w-0">
