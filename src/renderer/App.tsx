@@ -88,8 +88,10 @@ const STATUS_DOT: Record<OutcomeStatus, string> = {
 };
 
 function App() {
+  type RightSidebarView = "timeline" | "review" | "spec";
   const [panelWidth, setPanelWidth] = useState(38);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [rightSidebar, setRightSidebar] = useState<RightSidebarView | null>(null);
   const [outcomes, setOutcomes] = useState<Outcome[]>(loadOutcomes);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; index: number } | null>(null);
   const [renameIndex, setRenameIndex] = useState<number | null>(null);
@@ -469,6 +471,7 @@ function App() {
   const currentLiveOutput = currentOutcome ? liveOutput[currentOutcome.id] ?? "" : "";
   const currentQueue = queue;
   const executionsList = currentOutcome ? executions[currentOutcome.id] || [] : [];
+  const toggleRightSidebar = (view: RightSidebarView) => setRightSidebar((current) => current === view ? null : view);
 
   const EXEC_STATUS_TEXT: Record<AgentExecution["status"], string> = {
     idle: "idle",
@@ -549,8 +552,13 @@ function App() {
             <>
               <div className="flex-1 overflow-y-auto select-text">
                 <div className="border-b border-ctp-surface0 px-4 py-3">
-                  <div className="flex items-center gap-2">
-                    <h2 className="text-lg font-medium text-ctp-text">{currentOutcome.name}</h2>
+                  <div className="flex items-center justify-between gap-3">
+                    <h2 className="text-lg font-medium text-ctp-text truncate">{currentOutcome.name}</h2>
+                    <div className="flex shrink-0 items-center gap-1">
+                      <Tooltip text="Outcome spec"><button onClick={() => toggleRightSidebar("spec")} className={`w-7 h-7 rounded flex items-center justify-center transition-colors ${rightSidebar === "spec" ? "bg-ctp-mauve text-ctp-crust" : "text-ctp-overlay0 hover:text-ctp-text hover:bg-ctp-surface0"}`}><svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6M9 8h.01M5 4h14a2 2 0 012 2v12a2 2 0 01-2 2H5a2 2 0 01-2-2V6a2 2 0 012-2z" /></svg></button></Tooltip>
+                      <Tooltip text="Review"><button onClick={() => toggleRightSidebar("review")} className={`w-7 h-7 rounded flex items-center justify-center transition-colors ${rightSidebar === "review" ? "bg-ctp-mauve text-ctp-crust" : "text-ctp-overlay0 hover:text-ctp-text hover:bg-ctp-surface0"}`}><svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m5-2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg></button></Tooltip>
+                      <Tooltip text="Timeline"><button onClick={() => toggleRightSidebar("timeline")} className={`w-7 h-7 rounded flex items-center justify-center transition-colors ${rightSidebar === "timeline" ? "bg-ctp-mauve text-ctp-crust" : "text-ctp-overlay0 hover:text-ctp-text hover:bg-ctp-surface0"}`}><svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6l4 2m5-2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg></button></Tooltip>
+                    </div>
                   </div>
                   <div className="flex items-center gap-2 mt-1.5">
                     <span className={`text-xs font-medium uppercase tracking-wider ${STATUS_COLORS[currentOutcome.status]}`}>
@@ -564,7 +572,7 @@ function App() {
                   </div>
                 </div>
 
-                <div className="px-4 py-3 border-b border-ctp-surface0">
+                <div className="hidden px-4 py-3 border-b border-ctp-surface0">
                   <div className="flex items-center justify-between gap-3">
                     <div className="min-w-0">
                       <div className="text-[11px] font-medium text-ctp-overlay0 uppercase tracking-wider mb-0.5">Project</div>
@@ -580,7 +588,7 @@ function App() {
                 </div>
 
                 {(currentOutcome.goal || currentOutcome.constraints || currentOutcome.acceptanceCriteria.length > 0) && (
-                  <div className="px-4 py-3 border-b border-ctp-surface0 space-y-2">
+                  <div className="hidden px-4 py-3 border-b border-ctp-surface0 space-y-2">
                     {currentOutcome.goal && (
                       <div>
                         <div className="text-[11px] font-medium text-ctp-overlay0 uppercase tracking-wider mb-0.5">Goal</div>
@@ -607,7 +615,7 @@ function App() {
                 )}
 
                 {executionsList.length > 0 && (
-                  <div className="px-4 py-3 border-b border-ctp-surface0">
+                  <div className="hidden px-4 py-3 border-b border-ctp-surface0">
                     <div className="text-[11px] font-medium text-ctp-overlay0 uppercase tracking-wider mb-1.5">Agents</div>
                     <div className="space-y-1">
                       {executionsList.map((ex) => (
@@ -621,7 +629,7 @@ function App() {
                 )}
 
                 {(currentOutcome.validation || currentOutcome.visualValidation || currentOutcome.review) && (
-                  <div className="px-4 py-3 border-b border-ctp-surface0 space-y-3">
+                  <div className="hidden px-4 py-3 border-b border-ctp-surface0 space-y-3">
                     <div className="flex items-center justify-between gap-3">
                       <div className="text-[11px] font-medium text-ctp-overlay0 uppercase tracking-wider">Review</div>
                       {currentOutcome.status === "Ready to review" && currentOutcome.prepared && (
@@ -708,7 +716,7 @@ function App() {
                 )}
 
                 {currentOutcome.events.length > 0 && (
-                  <div className="px-4 py-3 border-b border-ctp-surface0">
+                  <div className="hidden px-4 py-3 border-b border-ctp-surface0">
                     <div className="text-[11px] font-medium text-ctp-overlay0 uppercase tracking-wider mb-1.5">Timeline</div>
                     <div className="space-y-1.5">
                       {[...currentOutcome.events].reverse().map((ev) => (
@@ -866,6 +874,32 @@ function App() {
             </div>
           )}
         </div>
+
+        {currentOutcome && rightSidebar && (
+          <aside className="w-[330px] shrink-0 rounded-xl border border-ctp-surface0 bg-ctp-mantle mr-[5px] overflow-hidden flex flex-col">
+            <div className="flex items-center justify-between px-3 py-3 border-b border-ctp-surface0">
+              <span className="text-sm font-medium text-ctp-text">{rightSidebar === "spec" ? "Outcome spec" : rightSidebar === "review" ? "Review" : "Timeline"}</span>
+              <button onClick={() => setRightSidebar(null)} className="w-6 h-6 rounded text-ctp-overlay0 hover:text-ctp-text hover:bg-ctp-surface0">×</button>
+            </div>
+            <div className="flex-1 overflow-y-auto select-text p-4">
+              {rightSidebar === "spec" && <div className="space-y-5">
+                <div><div className="text-[11px] uppercase tracking-wider text-ctp-overlay0 mb-1">Project</div><div className="text-xs text-ctp-subtext1 break-words">{currentOutcome.projectPath || "No project selected"}</div><button onClick={() => void chooseProjectForOutcome(currentOutcome.id)} className="mt-2 text-xs px-2 py-1 rounded bg-ctp-surface0 hover:bg-ctp-surface1">{currentOutcome.projectPath ? "Change project" : "Choose project"}</button></div>
+                <div><div className="text-[11px] uppercase tracking-wider text-ctp-overlay0 mb-1">Goal</div><div className="text-sm whitespace-pre-wrap">{currentOutcome.goal || currentOutcome.name}</div></div>
+                {currentOutcome.constraints && <div><div className="text-[11px] uppercase tracking-wider text-ctp-overlay0 mb-1">Constraints</div><div className="text-sm whitespace-pre-wrap">{currentOutcome.constraints}</div></div>}
+                <div><div className="text-[11px] uppercase tracking-wider text-ctp-overlay0 mb-1">Acceptance criteria</div>{currentOutcome.acceptanceCriteria.length ? <ul className="space-y-2">{currentOutcome.acceptanceCriteria.map((criterion, index) => <li key={index} className="text-sm">— {criterion}</li>)}</ul> : <div className="text-sm text-ctp-overlay0">No criteria yet</div>}</div>
+                {executionsList.length > 0 && <div><div className="text-[11px] uppercase tracking-wider text-ctp-overlay0 mb-1">Agents</div>{executionsList.map((execution) => <div key={execution.id} className="flex gap-2 text-sm"><span>{execution.name}</span><span className={EXEC_STATUS_COLOR[execution.status]}>{EXEC_STATUS_TEXT[execution.status]}</span></div>)}</div>}
+              </div>}
+              {rightSidebar === "timeline" && <div className="space-y-3">{[...currentOutcome.events].reverse().map((event) => <div key={event.id} className="flex gap-2 text-xs"><span className="shrink-0 text-ctp-overlay0 font-mono">{new Date(event.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span><span className="text-ctp-subtext1">{event.message}</span></div>)}</div>}
+              {rightSidebar === "review" && <div className="space-y-3">
+                {currentOutcome.status === "Ready to review" && currentOutcome.prepared && <div className="flex gap-2"><button onClick={() => void approveOutcome(currentOutcome)} className="text-xs px-2 py-1 rounded bg-ctp-green text-ctp-crust">Apply changes</button><button onClick={() => void discardOutcomeChanges(currentOutcome)} className="text-xs px-2 py-1 rounded bg-ctp-surface0">Discard</button></div>}
+                {currentOutcome.validation?.map((check) => <details key={check.command} className="rounded border border-ctp-surface0 p-2"><summary className={`text-xs cursor-pointer ${check.passed ? "text-ctp-green" : "text-ctp-red"}`}>{check.passed ? "✓" : "×"} {check.command}</summary><pre className="mt-2 max-h-40 overflow-auto whitespace-pre-wrap text-xs text-ctp-subtext1">{check.output}</pre></details>)}
+                {currentOutcome.visualValidation && <div className={`rounded border p-2 text-xs ${currentOutcome.visualValidation.passed ? "border-ctp-green/40" : "border-ctp-red/40"}`}><div className={currentOutcome.visualValidation.passed ? "text-ctp-green" : "text-ctp-red"}>{currentOutcome.visualValidation.passed ? "✓" : "×"} Visual browser validation</div><div className="mt-1 text-ctp-subtext1">{currentOutcome.visualValidation.message}</div>{currentOutcome.visualValidation.screenshots.map((screenshot) => <img key={screenshot.label} src={screenshot.dataUrl} alt={screenshot.label} className="mt-3 rounded border border-ctp-surface0" />)}</div>}
+                {currentOutcome.review && <details className="rounded border border-ctp-surface0 p-2"><summary className="text-xs cursor-pointer">Changed files ({currentOutcome.review.changedFiles.length})</summary><pre className="mt-2 max-h-64 overflow-auto whitespace-pre-wrap text-xs text-ctp-subtext1">{currentOutcome.review.summary}{"\n"}{currentOutcome.review.changedFiles.join("\n")}{"\n\n"}{currentOutcome.review.diff}</pre></details>}
+                {!currentOutcome.validation && !currentOutcome.visualValidation && !currentOutcome.review && <div className="text-sm text-ctp-overlay0">Review appears after an agent run.</div>}
+              </div>}
+            </div>
+          </aside>
+        )}
       </div>
 
       {settingsOpen && <SettingsModal onClose={() => setSettingsOpen(false)} />}
