@@ -4,6 +4,7 @@ import { Tooltip } from "./components/Tooltip";
 import { SettingsModal } from "./components/SettingsModal";
 import { ContextMenu } from "./components/ContextMenu";
 import { RenameModal } from "./components/RenameModal";
+import Markdown from "./components/Markdown";
 
 type OutcomeStatus =
   | "Draft"
@@ -851,10 +852,14 @@ function App() {
                     <div className="space-y-4">
                       {currentMessages.map((msg, i) => (
                         <div key={i} className={`py-1 px-2 -mx-2 rounded ${msg.role === "user" ? "bg-white/[0.03]" : ""}`}>
-                          <div className="text-sm text-ctp-text leading-relaxed whitespace-pre-wrap font-mono">
-                            {msg.role === "user" && <span className="text-ctp-mauve mr-2 select-none">&gt;</span>}
-                            {msg.content}
-                          </div>
+                          {msg.role === "user" ? (
+                            <div className="text-sm text-ctp-text leading-relaxed whitespace-pre-wrap font-mono">
+                              <span className="text-ctp-mauve mr-2 select-none">&gt;</span>
+                              {msg.content}
+                            </div>
+                          ) : (
+                            <Markdown content={msg.content} />
+                          )}
                         </div>
                       ))}
                       {currentQueue.map((item) => (
