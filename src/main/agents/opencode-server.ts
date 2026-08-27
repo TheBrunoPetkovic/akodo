@@ -31,9 +31,12 @@ interface OpenCodeSession {
   id: string;
 }
 
-interface OpenCodeMessageResponse {
+interface OpenCodeSessionMessage {
+  info?: { role?: string };
   parts?: Array<{ type?: string; text?: string }>;
 }
+
+type OpenCodeSessionStatus = Record<string, { type?: "busy" | "idle" | "retry" }>;
 
 export class OpenCodeServerAdapter {
   // Akodo owns this server instance so its folder restrictions do not affect a user's own OpenCode session.
@@ -71,14 +74,8 @@ export class OpenCodeServerAdapter {
       this.emit({ type: "started", runId, outcomeId: input.outcomeId });
 
       try {
-        const response = await this.request<OpenCodeMessageResponse>(`/session/${session.id}/message`, input.projectPath, {
-          method: "POST",
-          body: JSON.stringify({ parts: [{ type: "text", text: input.prompt }] }),
-        });
-        const text = (response.parts ?? [])
-          .filter((part) => part.type === "text" && part.text)
-          .map((part) => part.text)
-          .join("\n") || "OpenCode completed without text output.";
+        await this.startPrompt(session.id, input.projectPath, input.prompt);
+        const text = await this.waitForReply(session.id, input.projectPath, runId, input.outcomeId);
         this.emit({ type: "completed", runId, outcomeId: input.outcomeId, exitCode: 0 });
         return text;
       } finally {
@@ -111,6 +108,50 @@ export class OpenCodeServerAdapter {
       body: JSON.stringify({ answers }),
     });
     return true;
+  }
+
+  private async startPrompt(sessionId: string, projectPath: string, prompt: string): Promise<void> {
+    try {
+      await this.requestNoContent(`/session/${sessionId}/prompt_async`, projectPath, {
+        method: "POST",
+        body: JSON.stringify({ parts: [{ type: "text", text: prompt }] }),
+      });
+    } catch (error) {
+      // A dropped response can still mean OpenCode accepted the prompt. Check the session before retrying a non-idempotent request.
+      const statuses = await this.sessionStatus(projectPath).catch((): OpenCodeSessionStatus => ({}));
+      if (statuses[sessionId]?.type === "busy") return;
+      throw error;
+    }
+  }
+
+  private async waitForReply(sessionId: string, projectPath: string, runId: string, outcomeId: string): Promise<string> {
+    const deadline = Date.now() + 30 * 60_000;
+    let warnedAboutReconnect = false;
+    while (Date.now() < deadline) {
+      try {
+        const statuses = await this.sessionStatus(projectPath);
+        if (statuses[sessionId]?.type === "idle") {
+          const messages = await this.request<OpenCodeSessionMessage[]>(`/session/${sessionId}/message`, projectPath, { method: "GET" }, true);
+          const reply = [...messages].reverse().find((message) => message.info?.role === "assistant");
+          const text = (reply?.parts ?? [])
+            .filter((part) => part.type === "text" && part.text)
+            .map((part) => part.text)
+            .join("\n");
+          return text || "OpenCode completed without text output.";
+        }
+      } catch (error) {
+        if (!warnedAboutReconnect) {
+          warnedAboutReconnect = true;
+          this.emit({ type: "output", runId, outcomeId, text: "Connection interrupted; reconnecting to the active OpenCode session…" });
+        }
+      }
+      await new Promise((resolve) => setTimeout(resolve, 1_000));
+    }
+    throw new Error("OpenCode session did not finish within 30 minutes. It may still be running; check Live output and try again.");
+  }
+
+  private async sessionStatus(projectPath: string): Promise<OpenCodeSessionStatus> {
+    return this.request<OpenCodeSessionStatus>("/session/status", projectPath, { method: "GET" }, true);
   }
 
   shutdown() {
@@ -148,14 +189,33 @@ export class OpenCodeServerAdapter {
     }
   }
 
-  private async request<T = unknown>(route: string, projectPath: string, init: RequestInit): Promise<T> {
+  private async request<T = unknown>(route: string, projectPath: string, init: RequestInit, retryConnection = false): Promise<T> {
+    const query = `directory=${encodeURIComponent(projectPath)}`;
+    const attempts = retryConnection ? 3 : 1;
+    let lastError: unknown;
+    for (let attempt = 0; attempt < attempts; attempt += 1) {
+      try {
+        const response = await fetch(`${this.baseUrl}${route}?${query}`, {
+          ...init,
+          headers: { "Content-Type": "application/json", ...init.headers },
+        });
+        if (!response.ok) throw new Error(`OpenCode server error ${response.status}: ${await response.text()}`);
+        return response.json() as Promise<T>;
+      } catch (error) {
+        lastError = error;
+        if (attempt + 1 < attempts) await new Promise((resolve) => setTimeout(resolve, 500 * (attempt + 1)));
+      }
+    }
+    throw lastError;
+  }
+
+  private async requestNoContent(route: string, projectPath: string, init: RequestInit): Promise<void> {
     const query = `directory=${encodeURIComponent(projectPath)}`;
     const response = await fetch(`${this.baseUrl}${route}?${query}`, {
       ...init,
       headers: { "Content-Type": "application/json", ...init.headers },
     });
     if (!response.ok) throw new Error(`OpenCode server error ${response.status}: ${await response.text()}`);
-    return response.json() as Promise<T>;
   }
 
   private subscribeToSession(
@@ -186,7 +246,8 @@ export class OpenCodeServerAdapter {
           if (!data || !data.includes(sessionId)) continue;
           const question = this.questionFromEvent(data);
           if (question) onQuestion(question);
-          this.emit({ type: "output", runId, outcomeId, text: this.describeEvent(data) });
+          const text = this.describeEvent(data);
+          if (text) this.emit({ type: "output", runId, outcomeId, text });
         }
       });
     });
@@ -197,12 +258,14 @@ export class OpenCodeServerAdapter {
     };
   }
 
-  private describeEvent(data: string): string {
+  private describeEvent(data: string): string | null {
     try {
-      const event = JSON.parse(data) as { type?: string; properties?: { part?: { text?: string } } };
-      return event.properties?.part?.text || event.type || data;
+      const event = JSON.parse(data) as { type?: string; properties?: { delta?: string; part?: { text?: string; delta?: string } } };
+      if (event.type === "message.part.delta") return event.properties?.part?.delta || event.properties?.delta || null;
+      if (event.type === "message.part.updated") return null;
+      return event.properties?.part?.text || null;
     } catch {
-      return data;
+      return null;
     }
   }
 
