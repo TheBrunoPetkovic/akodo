@@ -1,4 +1,4 @@
-const http = require("http");
+import http from "node:http";
 
 const maxRetries = 30;
 const interval = 500;

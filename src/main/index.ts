@@ -1,8 +1,14 @@
-import { app, BrowserWindow, ipcMain, screen } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, screen } from "electron";
 import path from "path";
-import { config } from "./config";
+import { OpenCodeServerAdapter, type OpenCodeEvent } from "./agents/opencode-server";
+import { OutcomeWorkflow, type PreparedOutcome } from "./outcomes/workflow";
 
 let mainWindow: BrowserWindow | null = null;
+const openCode = new OpenCodeServerAdapter(
+  (event: OpenCodeEvent) => mainWindow?.webContents.send("opencode:event", event),
+  app.getPath("home")
+);
+const workflow = new OutcomeWorkflow(path.join(app.getPath("userData"), "worktrees"));
 
 const VITE_DEV_SERVER_URL = "http://localhost:5173";
 
@@ -78,35 +84,44 @@ ipcMain.on("window-close", () => {
   mainWindow?.close();
 });
 
-ipcMain.handle("chat-send", async (_event, messages: { role: string; content: string }[], model: string, apiKey: string) => {
-  const response = await fetch(config.apiEndpoint, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      model,
-      messages,
-    }),
+ipcMain.handle("opencode-status", async () => ({
+  available: await openCode.isAvailable(),
+}));
+
+ipcMain.handle("select-project", async () => {
+  const result = await dialog.showOpenDialog(mainWindow!, {
+    title: "Choose a project for Akodo",
+    properties: ["openDirectory"],
   });
+  return !result.canceled && result.filePaths[0] ? result.filePaths[0] : null;
+});
 
-  if (!response.ok) {
-    const error = await response.text();
-    throw new Error(`API error ${response.status}: ${error}`);
-  }
+ipcMain.handle("opencode-run", async (_event, input: { outcomeId: string; projectPath: string; prompt: string }) => {
+  if (!input.projectPath) throw new Error("Choose a local project for this outcome before starting it.");
+  if (!(await openCode.isAvailable())) throw new Error("OpenCode CLI is not installed or is not available on PATH.");
+  return openCode.runForReply(input);
+});
 
-  const data = await response.json() as Record<string, unknown>;
+ipcMain.handle("opencode-cancel", (_event, runId: string) => {
+  return openCode.cancel(runId);
+});
 
-  if (data.choices && Array.isArray(data.choices) && data.choices[0]) {
-    const choice = data.choices[0] as { message: { content: string } };
-    return choice.message.content;
-  }
+ipcMain.handle("outcome-prepare", async (_event, input: { outcomeId: string; projectPath: string }) => {
+  return workflow.prepare(input.outcomeId, input.projectPath);
+});
 
-  if (data.error) {
-    const err = data.error as { message?: string };
-    throw new Error(err.message || JSON.stringify(data.error));
-  }
+ipcMain.handle("outcome-validate", async (_event, worktreePath: string) => {
+  return workflow.validate(worktreePath);
+});
 
-  throw new Error(`Unexpected response: ${JSON.stringify(data).slice(0, 200)}`);
+ipcMain.handle("outcome-review", async (_event, worktreePath: string) => {
+  return workflow.review(worktreePath);
+});
+
+ipcMain.handle("outcome-approve", async (_event, input: { prepared: PreparedOutcome; outcomeName: string }) => {
+  await workflow.approve(input.prepared, input.outcomeName);
+});
+
+ipcMain.handle("outcome-discard", async (_event, prepared: PreparedOutcome) => {
+  await workflow.discard(prepared);
 });

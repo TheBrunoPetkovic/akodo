@@ -1,11 +1,13 @@
+import akodoLogo from "../assets/akodo-logo.png";
+
 export function TopBar() {
   return (
     <div
       className="h-9 bg-ctp-base flex items-center justify-between select-none shrink-0"
       style={{ WebkitAppRegion: "drag" } as React.CSSProperties}
-    >
+      >
       <div className="flex items-center gap-2 px-3">
-        <div className="w-4 h-4 rounded-sm bg-gradient-to-br from-ctp-mauve to-ctp-pink" />
+        <img src={akodoLogo} alt="Akodo" className="w-5 h-5 object-contain" draggable={false} />
       </div>
 
       <div
