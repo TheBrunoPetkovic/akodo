@@ -7,7 +7,8 @@ import { VisualValidator } from "./outcomes/visual-validation";
 let mainWindow: BrowserWindow | null = null;
 const openCode = new OpenCodeServerAdapter(
   (event: OpenCodeEvent) => mainWindow?.webContents.send("opencode:event", event),
-  app.getPath("home")
+  app.getPath("home"),
+  path.join(app.getAppPath(), "node_modules")
 );
 const workflow = new OutcomeWorkflow(path.join(app.getPath("userData"), "worktrees"));
 const visualValidator = new VisualValidator(path.join(app.getPath("userData"), "artifacts"));

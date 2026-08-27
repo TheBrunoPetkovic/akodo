@@ -43,7 +43,8 @@ export class OpenCodeServerAdapter {
 
   constructor(
     private readonly emit: (event: OpenCodeEvent) => void,
-    private readonly userHome: string
+    private readonly userHome: string,
+    private readonly browserRuntimePath: string
   ) {}
 
   async isAvailable(): Promise<boolean> {
@@ -235,6 +236,8 @@ export class OpenCodeServerAdapter {
       // OpenCode treats anything outside the session worktree as an external directory.
       // Denying it keeps built-in file tools scoped to the outcome worktree.
       OPENCODE_PERMISSION: JSON.stringify({ external_directory: "deny" }),
+      // Lets agents use Akodo's managed Playwright runtime without installing packages in each outcome worktree.
+      NODE_PATH: [this.browserRuntimePath, process.env.NODE_PATH].filter(Boolean).join(path.delimiter),
     };
   }
 }
