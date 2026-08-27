@@ -12,6 +12,7 @@ type OpenCodeEvent = {
 type PreparedOutcome = { sourcePath: string; worktreePath: string; branch: string };
 type ValidationResult = { command: string; passed: boolean; output: string };
 type ReviewResult = { summary: string; diff: string; changedFiles: string[] };
+type VisualValidationResult = { supported: boolean; passed: boolean; message: string; screenshots: Array<{ label: string; dataUrl: string }>; consoleErrors: string[] };
 
 contextBridge.exposeInMainWorld("api", {
   getAppVersion: () => ipcRenderer.invoke("get-app-version"),
@@ -26,6 +27,7 @@ contextBridge.exposeInMainWorld("api", {
   prepareOutcome: (input: { outcomeId: string; projectPath: string }): Promise<PreparedOutcome> => ipcRenderer.invoke("outcome-prepare", input),
   validateOutcome: (worktreePath: string): Promise<ValidationResult[]> => ipcRenderer.invoke("outcome-validate", worktreePath),
   getOutcomeReview: (worktreePath: string): Promise<ReviewResult> => ipcRenderer.invoke("outcome-review", worktreePath),
+  visualValidateOutcome: (input: { worktreePath: string; outcomeId: string }): Promise<VisualValidationResult> => ipcRenderer.invoke("outcome-visual-validate", input),
   approveOutcome: (prepared: PreparedOutcome, outcomeName: string): Promise<void> => ipcRenderer.invoke("outcome-approve", { prepared, outcomeName }),
   discardOutcome: (prepared: PreparedOutcome): Promise<void> => ipcRenderer.invoke("outcome-discard", prepared),
   onOpenCodeEvent: (callback: (event: OpenCodeEvent) => void) => {

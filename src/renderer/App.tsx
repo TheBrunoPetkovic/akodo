@@ -36,6 +36,7 @@ interface Outcome {
   prepared?: { sourcePath: string; worktreePath: string; branch: string };
   validation?: { command: string; passed: boolean; output: string }[];
   review?: { summary: string; diff: string; changedFiles: string[] };
+  visualValidation?: { supported: boolean; passed: boolean; message: string; screenshots: Array<{ label: string; dataUrl: string }>; consoleErrors: string[] };
   question?: { runId: string; requestId: string; questions: Array<{ header: string; question: string; options: Array<{ label: string; description?: string }>; multiple?: boolean; custom?: boolean }> };
   createdAt: number;
 }
@@ -328,15 +329,17 @@ function App() {
       } : item));
 
       const validation = await window.api.validateOutcome(prepared.worktreePath);
+      const visualValidation = await window.api.visualValidateOutcome({ worktreePath: prepared.worktreePath, outcomeId });
       const review = await window.api.getOutcomeReview(prepared.worktreePath);
-      const passed = validation.every((result) => result.passed);
+      const passed = validation.every((result) => result.passed) && (!visualValidation.supported || visualValidation.passed);
       setOutcomes((previous) => previous.map((item) => item.id === outcomeId ? {
         ...item,
         prepared,
         validation,
+        visualValidation,
         review,
         status: passed ? "Ready to review" : "Needs input",
-        events: [...item.events, makeEvent("validation.completed", passed ? "Checks passed; review the changes before applying" : "One or more checks failed; review and ask OpenCode to fix them")],
+        events: [...item.events, makeEvent("validation.completed", passed ? "Checks and visual preview passed; review the changes before applying" : "A code check or visual preview failed; review and ask OpenCode to fix it")],
       } : item));
       if (firstExec) updateExecution(outcomeId, firstExec.id, passed ? "done" : "attention");
     } catch (error) {
@@ -617,7 +620,7 @@ function App() {
                   </div>
                 )}
 
-                {(currentOutcome.validation || currentOutcome.review) && (
+                {(currentOutcome.validation || currentOutcome.visualValidation || currentOutcome.review) && (
                   <div className="px-4 py-3 border-b border-ctp-surface0 space-y-3">
                     <div className="flex items-center justify-between gap-3">
                       <div className="text-[11px] font-medium text-ctp-overlay0 uppercase tracking-wider">Review</div>
@@ -639,6 +642,25 @@ function App() {
                           </details>
                         ))}
                       </div>
+                    )}
+                    {currentOutcome.visualValidation && (
+                      <details className="rounded bg-ctp-base border border-ctp-surface0 px-2 py-1.5" open={currentOutcome.visualValidation.supported}>
+                        <summary className={`cursor-pointer text-xs font-mono ${currentOutcome.visualValidation.passed ? "text-ctp-green" : "text-ctp-red"}`}>
+                          {currentOutcome.visualValidation.passed ? "✓" : "×"} Visual browser validation
+                        </summary>
+                        <div className="mt-2 text-xs text-ctp-subtext1">{currentOutcome.visualValidation.message}</div>
+                        {currentOutcome.visualValidation.consoleErrors.length > 0 && <pre className="mt-2 max-h-32 overflow-auto whitespace-pre-wrap text-xs text-ctp-red font-mono">{currentOutcome.visualValidation.consoleErrors.join("\n")}</pre>}
+                        {currentOutcome.visualValidation.screenshots.length > 0 && (
+                          <div className="mt-3 grid grid-cols-2 gap-2">
+                            {currentOutcome.visualValidation.screenshots.map((screenshot) => (
+                              <div key={screenshot.label} className="min-w-0">
+                                <div className="mb-1 text-[10px] uppercase tracking-wider text-ctp-overlay0">{screenshot.label}</div>
+                                <img src={screenshot.dataUrl} alt={`${screenshot.label} visual validation`} className="w-full rounded border border-ctp-surface0" />
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </details>
                     )}
                     {currentOutcome.review && (
                       <details className="rounded bg-ctp-base border border-ctp-surface0 px-2 py-1.5">

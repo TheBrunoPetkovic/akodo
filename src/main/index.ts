@@ -2,6 +2,7 @@ import { app, BrowserWindow, dialog, ipcMain, screen } from "electron";
 import path from "path";
 import { OpenCodeServerAdapter, type OpenCodeEvent } from "./agents/opencode-server";
 import { OutcomeWorkflow, type PreparedOutcome } from "./outcomes/workflow";
+import { VisualValidator } from "./outcomes/visual-validation";
 
 let mainWindow: BrowserWindow | null = null;
 const openCode = new OpenCodeServerAdapter(
@@ -9,6 +10,7 @@ const openCode = new OpenCodeServerAdapter(
   app.getPath("home")
 );
 const workflow = new OutcomeWorkflow(path.join(app.getPath("userData"), "worktrees"));
+const visualValidator = new VisualValidator(path.join(app.getPath("userData"), "artifacts"));
 
 const VITE_DEV_SERVER_URL = "http://localhost:5173";
 
@@ -120,6 +122,10 @@ ipcMain.handle("outcome-validate", async (_event, worktreePath: string) => {
 
 ipcMain.handle("outcome-review", async (_event, worktreePath: string) => {
   return workflow.review(worktreePath);
+});
+
+ipcMain.handle("outcome-visual-validate", async (_event, input: { worktreePath: string; outcomeId: string }) => {
+  return visualValidator.run(input.worktreePath, input.outcomeId);
 });
 
 ipcMain.handle("outcome-approve", async (_event, input: { prepared: PreparedOutcome; outcomeName: string }) => {
