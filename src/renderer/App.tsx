@@ -565,11 +565,6 @@ function App() {
                         {currentOutcome.status}
                       </span>
                     )}
-                    {(currentOutcome.status === "Draft" || currentOutcome.status === "Needs input" || currentOutcome.status === "Failed") && (
-                      <button onClick={() => startOutcome(selectedIndex!)} className="text-xs px-2 py-0.5 rounded bg-ctp-mauve text-ctp-crust font-medium hover:opacity-80">
-                        {currentOutcome.prepared ? "Retry" : "Start"}
-                      </button>
-                    )}
                   </div>
                 </div>
 
