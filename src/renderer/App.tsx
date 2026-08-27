@@ -36,6 +36,7 @@ interface Outcome {
   prepared?: { sourcePath: string; worktreePath: string; branch: string };
   validation?: { command: string; passed: boolean; output: string }[];
   review?: { summary: string; diff: string; changedFiles: string[] };
+  question?: { runId: string; requestId: string; questions: Array<{ header: string; question: string; options: Array<{ label: string; description?: string }>; multiple?: boolean; custom?: boolean }> };
   createdAt: number;
 }
 
@@ -103,6 +104,7 @@ function App() {
   const [newOutcomeConstraints, setNewOutcomeConstraints] = useState("");
   const [executions, setExecutions] = useState<Record<string, AgentExecution[]>>({});
   const [liveOutput, setLiveOutput] = useState<Record<string, string>>({});
+  const [questionAnswers, setQuestionAnswers] = useState<Record<string, string[][]>>({});
   const outcomeCountRef = parseInt(localStorage.getItem("akodo-outcome-count") ?? "0", 10);
   const outcomeCount = useRef(outcomeCountRef);
   const isDragging = useRef(false);
@@ -126,6 +128,16 @@ function App() {
   useEffect(() => window.api.onOpenCodeEvent((event) => {
     if (event.type === "started") {
       setLiveOutput((previous) => ({ ...previous, [event.outcomeId]: "Starting OpenCode…\n" }));
+      return;
+    }
+    if (event.type === "question" && event.question) {
+      setQuestionAnswers((previous) => ({ ...previous, [event.outcomeId]: event.question!.questions.map(() => []) }));
+      setOutcomes((previous) => previous.map((outcome) => outcome.id === event.outcomeId ? {
+        ...outcome,
+        status: "Needs input",
+        question: { runId: event.runId, ...event.question! },
+        events: [...outcome.events, makeEvent("agent.question", "OpenCode needs your input to continue")],
+      } : outcome));
       return;
     }
     if (event.type !== "output" || !event.text) return;
@@ -381,6 +393,43 @@ function App() {
     }
   };
 
+  const toggleQuestionAnswer = (outcome: Outcome, questionIndex: number, label: string, multiple: boolean) => {
+    setQuestionAnswers((previous) => {
+      const answers = [...(previous[outcome.id] ?? [])];
+      const current = answers[questionIndex] ?? [];
+      answers[questionIndex] = multiple
+        ? (current.includes(label) ? current.filter((item) => item !== label) : [...current, label])
+        : [label];
+      return { ...previous, [outcome.id]: answers };
+    });
+  };
+
+  const submitQuestionAnswers = async (outcome: Outcome, providedAnswers?: string[][]) => {
+    if (!outcome.question) return;
+    const answers = providedAnswers ?? questionAnswers[outcome.id] ?? [];
+    if (answers.length !== outcome.question.questions.length || answers.some((answer) => answer.length === 0)) return;
+    try {
+      await window.api.answerOpenCodeQuestion({
+        runId: outcome.question.runId,
+        requestId: outcome.question.requestId,
+        answers,
+      });
+      setOutcomes((previous) => previous.map((item) => item.id === outcome.id ? {
+        ...item,
+        status: "Working",
+        question: undefined,
+        messages: [...item.messages, { role: "user", content: `Answer: ${answers.map((answer) => answer.join(", ")).join(" | ")}` }],
+        events: [...item.events, makeEvent("agent.answer", "Answer sent; OpenCode is continuing")],
+      } : item));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setOutcomes((previous) => previous.map((item) => item.id === outcome.id ? {
+        ...item,
+        events: [...item.events, makeEvent("agent.answer_failed", message)],
+      } : item));
+    }
+  };
+
   const sendMessage = async () => {
     if (!input.trim() || selectedIndex === null) return;
 
@@ -388,6 +437,13 @@ function App() {
     const outcomeId = outcome.id;
     const content = input.trim();
     setInput("");
+
+    if (outcome.question) {
+      const answers = outcome.question.questions.map((_, index) => questionAnswers[outcome.id]?.[index]?.length ? questionAnswers[outcome.id][index] : [content]);
+      setQuestionAnswers((previous) => ({ ...previous, [outcome.id]: answers }));
+      await submitQuestionAnswers(outcome, answers);
+      return;
+    }
 
     if (loadingRef.current) {
       setQueue((prev) => [...prev, { id: crypto.randomUUID(), content }]);
@@ -590,6 +646,42 @@ function App() {
                         <pre className="mt-2 max-h-64 overflow-auto whitespace-pre-wrap break-words text-xs text-ctp-subtext1 font-mono">{currentOutcome.review.summary}\n{currentOutcome.review.changedFiles.join("\n")}\n\n{currentOutcome.review.diff}</pre>
                       </details>
                     )}
+                  </div>
+                )}
+
+                {currentOutcome.question && (
+                  <div className="px-4 py-3 border-b border-ctp-surface0 space-y-3 bg-ctp-yellow/5">
+                    <div className="text-[11px] font-medium text-ctp-yellow uppercase tracking-wider">OpenCode needs your decision</div>
+                    {currentOutcome.question.questions.map((question, questionIndex) => {
+                      const selected = questionAnswers[currentOutcome.id]?.[questionIndex] ?? [];
+                      return (
+                        <div key={`${currentOutcome.question!.requestId}-${questionIndex}`} className="space-y-2">
+                          <div className="text-sm text-ctp-text">{question.question}</div>
+                          <div className="space-y-1.5">
+                            {question.options.map((option) => {
+                              const active = selected.includes(option.label);
+                              return (
+                                <button
+                                  key={option.label}
+                                  onClick={() => toggleQuestionAnswer(currentOutcome, questionIndex, option.label, Boolean(question.multiple))}
+                                  className={`block w-full text-left rounded border px-2.5 py-2 text-xs transition-colors ${active ? "border-ctp-mauve bg-ctp-mauve/15 text-ctp-text" : "border-ctp-surface0 bg-ctp-base text-ctp-subtext1 hover:bg-ctp-surface0"}`}
+                                >
+                                  <div className="font-medium">{option.label}</div>
+                                  {option.description && <div className="mt-0.5 text-ctp-overlay0">{option.description}</div>}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      );
+                    })}
+                    <button
+                      onClick={() => void submitQuestionAnswers(currentOutcome)}
+                      disabled={(questionAnswers[currentOutcome.id] ?? []).length !== currentOutcome.question.questions.length || (questionAnswers[currentOutcome.id] ?? []).some((answer) => answer.length === 0)}
+                      className="px-3 py-1.5 rounded bg-ctp-mauve text-ctp-crust text-xs font-medium disabled:opacity-40 hover:opacity-90"
+                    >
+                      Continue agent
+                    </button>
                   </div>
                 )}
 

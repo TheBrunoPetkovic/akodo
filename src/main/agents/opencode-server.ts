@@ -6,8 +6,20 @@ import path from "path";
 export type OpenCodeEvent =
   | { type: "started"; runId: string; outcomeId: string }
   | { type: "output"; runId: string; outcomeId: string; text: string }
+  | { type: "question"; runId: string; outcomeId: string; question: OpenCodeQuestion }
   | { type: "completed"; runId: string; outcomeId: string; exitCode: number }
   | { type: "failed"; runId: string; outcomeId: string; message: string };
+
+export interface OpenCodeQuestion {
+  requestId: string;
+  questions: Array<{
+    header: string;
+    question: string;
+    options: Array<{ label: string; description?: string }>;
+    multiple?: boolean;
+    custom?: boolean;
+  }>;
+}
 
 export interface OpenCodeRunInput {
   outcomeId: string;
@@ -52,26 +64,17 @@ export class OpenCodeServerAdapter {
         body: JSON.stringify({ title: input.outcomeId }),
       });
       this.runs.set(runId, { sessionId: session.id, projectPath: input.projectPath });
-      let resolveQuestion: ((question: string) => void) | undefined;
-      const question = new Promise<string>((resolve) => { resolveQuestion = resolve; });
-      const unsubscribe = this.subscribeToSession(session.id, input.projectPath, runId, input.outcomeId, (questionText) => resolveQuestion?.(questionText));
+      const unsubscribe = this.subscribeToSession(session.id, input.projectPath, runId, input.outcomeId, (question) => {
+        this.emit({ type: "question", runId, outcomeId: input.outcomeId, question });
+      });
       this.emit({ type: "started", runId, outcomeId: input.outcomeId });
 
       try {
-        const response = this.request<OpenCodeMessageResponse>(`/session/${session.id}/message`, input.projectPath, {
+        const response = await this.request<OpenCodeMessageResponse>(`/session/${session.id}/message`, input.projectPath, {
           method: "POST",
           body: JSON.stringify({ parts: [{ type: "text", text: input.prompt }] }),
         });
-        const result = await Promise.race([
-          response.then((value) => ({ kind: "response" as const, value })),
-          question.then((value) => ({ kind: "question" as const, value })),
-        ]);
-        if (result.kind === "question") {
-          await this.request(`/session/${session.id}/abort`, input.projectPath, { method: "POST" }).catch(() => undefined);
-          this.emit({ type: "completed", runId, outcomeId: input.outcomeId, exitCode: 0 });
-          return `[[AKODO_NEEDS_INPUT]]\n${result.value}`;
-        }
-        const text = (result.value.parts ?? [])
+        const text = (response.parts ?? [])
           .filter((part) => part.type === "text" && part.text)
           .map((part) => part.text)
           .join("\n") || "OpenCode completed without text output.";
@@ -97,6 +100,16 @@ export class OpenCodeServerAdapter {
     } finally {
       this.runs.delete(runId);
     }
+  }
+
+  async answerQuestion(runId: string, requestId: string, answers: string[][]): Promise<boolean> {
+    const run = this.runs.get(runId);
+    if (!run) throw new Error("This agent run is no longer active. Start the outcome again to continue.");
+    await this.request(`/question/${requestId}/reply`, run.projectPath, {
+      method: "POST",
+      body: JSON.stringify({ answers }),
+    });
+    return true;
   }
 
   shutdown() {
@@ -149,7 +162,7 @@ export class OpenCodeServerAdapter {
     projectPath: string,
     runId: string,
     outcomeId: string,
-    onQuestion: (question: string) => void
+    onQuestion: (question: OpenCodeQuestion) => void
   ): () => void {
     let response: http.IncomingMessage | null = null;
     let shouldClose = false;
@@ -192,18 +205,14 @@ export class OpenCodeServerAdapter {
     }
   }
 
-  private questionFromEvent(data: string): string | null {
+  private questionFromEvent(data: string): OpenCodeQuestion | null {
     try {
       const event = JSON.parse(data) as {
-        properties?: { part?: { type?: string; tool?: string; state?: { status?: string; input?: { questions?: Array<{ question?: string; options?: Array<{ label?: string; description?: string }> }> } } } };
+        type?: string;
+        properties?: { id?: string; part?: { type?: string; tool?: string; state?: { status?: string; input?: { questions?: OpenCodeQuestion["questions"] } } }; questions?: OpenCodeQuestion["questions"] };
       };
-      const part = event.properties?.part;
-      if (part?.type !== "tool" || part.tool !== "question" || part.state?.status !== "running") return null;
-      const questions = part.state.input?.questions ?? [];
-      return questions.map((item) => {
-        const options = item.options?.map((option) => `- ${option.label}${option.description ? ` — ${option.description}` : ""}`).join("\n");
-        return `${item.question ?? "OpenCode needs an answer."}${options ? `\n${options}` : ""}`;
-      }).join("\n\n") || "OpenCode needs your input before it can continue.";
+      if (event.type !== "question.asked" || !event.properties?.id || !event.properties.questions?.length) return null;
+      return { requestId: event.properties.id, questions: event.properties.questions };
     } catch {
       return null;
     }

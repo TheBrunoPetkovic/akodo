@@ -106,6 +106,10 @@ ipcMain.handle("opencode-cancel", (_event, runId: string) => {
   return openCode.cancel(runId);
 });
 
+ipcMain.handle("opencode-answer-question", (_event, input: { runId: string; requestId: string; answers: string[][] }) => {
+  return openCode.answerQuestion(input.runId, input.requestId, input.answers);
+});
+
 ipcMain.handle("outcome-prepare", async (_event, input: { outcomeId: string; projectPath: string }) => {
   return workflow.prepare(input.outcomeId, input.projectPath);
 });

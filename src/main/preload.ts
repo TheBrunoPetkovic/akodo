@@ -22,6 +22,7 @@ contextBridge.exposeInMainWorld("api", {
   selectProject: () => ipcRenderer.invoke("select-project"),
   runOpenCode: (input: { outcomeId: string; projectPath: string; prompt: string }) => ipcRenderer.invoke("opencode-run", input),
   cancelOpenCode: (runId: string) => ipcRenderer.invoke("opencode-cancel", runId),
+  answerOpenCodeQuestion: (input: { runId: string; requestId: string; answers: string[][] }) => ipcRenderer.invoke("opencode-answer-question", input),
   prepareOutcome: (input: { outcomeId: string; projectPath: string }): Promise<PreparedOutcome> => ipcRenderer.invoke("outcome-prepare", input),
   validateOutcome: (worktreePath: string): Promise<ValidationResult[]> => ipcRenderer.invoke("outcome-validate", worktreePath),
   getOutcomeReview: (worktreePath: string): Promise<ReviewResult> => ipcRenderer.invoke("outcome-review", worktreePath),
