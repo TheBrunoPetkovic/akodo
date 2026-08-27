@@ -15,7 +15,10 @@ export class OutcomeWorkflow {
   constructor(private readonly worktreesRoot: string) {}
 
   async prepare(outcomeId: string, projectPath: string): Promise<PreparedOutcome> {
-    const sourcePath = await this.git(projectPath, ["rev-parse", "--show-toplevel"]);
+    const sourcePath = await this.git(projectPath, ["rev-parse", "--show-toplevel"]).catch(() => "");
+    if (!sourcePath) {
+      return { sourcePath: projectPath, worktreePath: projectPath, branch: "" };
+    }
     const sourceStatus = await this.git(sourcePath, ["status", "--porcelain"]);
     if (sourceStatus) {
       throw new Error("The selected project has uncommitted changes. Commit or stash them first so this outcome can start from a reproducible Git worktree.");
@@ -58,6 +61,13 @@ export class OutcomeWorkflow {
   }
 
   async review(worktreePath: string): Promise<ReviewResult> {
+    if (!(await this.isGitRepository(worktreePath))) {
+      return {
+        summary: "Direct workspace mode",
+        diff: "This folder is not a Git repository. Changes are being made directly in the selected project folder.",
+        changedFiles: ["Direct workspace changes"],
+      };
+    }
     const summary = await this.git(worktreePath, ["diff", "--stat"]);
     const diff = await this.git(worktreePath, ["diff", "--", "."], 30_000);
     const names = await this.git(worktreePath, ["status", "--short"]);
@@ -65,6 +75,7 @@ export class OutcomeWorkflow {
   }
 
   async approve(prepared: PreparedOutcome, outcomeName: string): Promise<void> {
+    if (prepared.sourcePath === prepared.worktreePath) return;
     const sourceStatus = await this.git(prepared.sourcePath, ["status", "--porcelain"]);
     if (sourceStatus) throw new Error("Your selected project's current branch has uncommitted changes. Commit or stash them before applying this outcome.");
     const review = await this.review(prepared.worktreePath);
@@ -75,12 +86,19 @@ export class OutcomeWorkflow {
   }
 
   async discard(prepared: PreparedOutcome): Promise<void> {
+    if (prepared.sourcePath === prepared.worktreePath) {
+      throw new Error("This outcome is using the selected folder directly, so its changes cannot be discarded automatically.");
+    }
     await this.git(prepared.sourcePath, ["worktree", "remove", "--force", prepared.worktreePath], 30_000);
     await this.git(prepared.sourcePath, ["branch", "-D", prepared.branch]);
   }
 
   private async git(cwd: string, args: string[], timeout = 15_000): Promise<string> {
     return this.command("git", ["-c", `safe.directory=${cwd}`, "-C", cwd, ...args], cwd, timeout);
+  }
+
+  private async isGitRepository(projectPath: string): Promise<boolean> {
+    return Boolean(await this.git(projectPath, ["rev-parse", "--is-inside-work-tree"]).catch(() => ""));
   }
 
   private async command(command: string, args: string[], cwd: string, timeout: number): Promise<string> {

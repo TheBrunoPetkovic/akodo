@@ -11,6 +11,8 @@ type OutcomeStatus =
   | "Working"
   | "Validating"
   | "Fixing"
+  | "Specifying"
+  | "Ready to implement"
   | "Needs input"
   | "Ready to review"
   | "Applied"
@@ -38,6 +40,7 @@ interface Outcome {
   review?: { summary: string; diff: string; changedFiles: string[] };
   visualValidation?: { supported: boolean; passed: boolean; message: string; screenshots: Array<{ label: string; dataUrl: string }>; consoleErrors: string[] };
   question?: { runId: string; requestId: string; questions: Array<{ header: string; question: string; options: Array<{ label: string; description?: string }>; multiple?: boolean; custom?: boolean }> };
+  specification?: { plan: string; confidence: number; links: string[]; status: "analyzing" | "ready" };
   createdAt: number;
 }
 
@@ -69,6 +72,8 @@ const STATUS_DOT: Record<OutcomeStatus, string> = {
   "Working": "bg-ctp-blue",
   "Validating": "bg-ctp-mauve",
   "Fixing": "bg-ctp-peach",
+  "Specifying": "bg-ctp-blue",
+  "Ready to implement": "bg-ctp-mauve",
   "Needs input": "bg-ctp-red",
   "Ready to review": "bg-ctp-green",
   "Applied": "bg-ctp-teal",
@@ -77,7 +82,7 @@ const STATUS_DOT: Record<OutcomeStatus, string> = {
 
 function App() {
   type RightSidebarView = "conversation" | "timeline" | "review" | "spec";
-  const [panelWidth, setPanelWidth] = useState(38);
+  const [panelWidth, setPanelWidth] = useState(() => ((250 + 50) / window.innerWidth) * 100);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [rightSidebar, setRightSidebar] = useState<RightSidebarView | null>(null);
   const [outcomes, setOutcomes] = useState<Outcome[]>(loadOutcomes);
@@ -88,6 +93,9 @@ function App() {
   const [loading, setLoading] = useState(false);
   const [queue, setQueue] = useState<{ id: string; content: string }[]>([]);
   const [creatingOutcome, setCreatingOutcome] = useState(false);
+  const [specificationStep, setSpecificationStep] = useState<"name" | "project" | "goal" | "constraints" | "criteria" | "links">("name");
+  const [specificationInput, setSpecificationInput] = useState("");
+  const [specificationMessages, setSpecificationMessages] = useState<{ role: "assistant" | "user"; content: string }[]>([]);
   const [newOutcomeName, setNewOutcomeName] = useState("");
   const [newOutcomeProjectPath, setNewOutcomeProjectPath] = useState("");
   const [newOutcomeGoal, setNewOutcomeGoal] = useState("");
@@ -96,12 +104,16 @@ function App() {
   const [executions, setExecutions] = useState<Record<string, AgentExecution[]>>({});
   const [liveOutput, setLiveOutput] = useState<Record<string, string>>({});
   const [questionAnswers, setQuestionAnswers] = useState<Record<string, string[][]>>({});
+  const [decisionErrors, setDecisionErrors] = useState<Record<string, string>>({});
+  const [submittingDecisionFor, setSubmittingDecisionFor] = useState<string | null>(null);
   const outcomeCountRef = parseInt(localStorage.getItem("akodo-outcome-count") ?? "0", 10);
   const outcomeCount = useRef(outcomeCountRef);
   const isDragging = useRef(false);
   const startX = useRef(0);
   const startWidth = useRef(0);
   const loadingRef = useRef(false);
+  const sidebarScrollRef = useRef<HTMLDivElement>(null);
+  const sidebarAtLatestRef = useRef(true);
 
   useEffect(() => {
     loadingRef.current = loading;
@@ -169,8 +181,26 @@ function App() {
     };
   }, []);
 
-  const createOutcome = () => {
-    if (!newOutcomeName.trim()) return;
+  const resetSpecificationFlow = () => {
+    setCreatingOutcome(false);
+    setSpecificationStep("name");
+    setSpecificationInput("");
+    setSpecificationMessages([]);
+    setNewOutcomeName("");
+    setNewOutcomeProjectPath("");
+    setNewOutcomeGoal("");
+    setNewOutcomeCriteria("");
+    setNewOutcomeConstraints("");
+  };
+
+  const beginSpecificationFlow = () => {
+    resetSpecificationFlow();
+    setCreatingOutcome(true);
+    setSpecificationMessages([{ role: "assistant", content: "Let’s turn this into a clear outcome. What should we call it?" }]);
+  };
+
+  const finalizeSpecificationFlow = (linksInput: string) => {
+    if (!newOutcomeName.trim() || !newOutcomeProjectPath) return;
     outcomeCount.current += 1;
     localStorage.setItem("akodo-outcome-count", outcomeCount.current.toString());
     const criteria = newOutcomeCriteria
@@ -185,32 +215,71 @@ function App() {
       id: crypto.randomUUID(),
       name: newOutcomeName.trim(),
       projectPath: newOutcomeProjectPath,
-      status: "Draft",
+      status: "Specifying",
       goal: newOutcomeGoal.trim(),
       constraints: constraints.join("\n"),
       acceptanceCriteria: criteria,
-      messages: [],
+      messages: [...specificationMessages, { role: "user", content: linksInput.trim() || "No reference links provided." }, { role: "assistant", content: "I’m inspecting the project and preparing the specification." }],
       events: [
-        { id: crypto.randomUUID(), type: "created", message: "Outcome created as draft", timestamp: Date.now() },
+        { id: crypto.randomUUID(), type: "created", message: "Specification flow started", timestamp: Date.now() },
       ],
+      specification: { status: "analyzing", plan: "", confidence: 0, links: linksInput.split("\n").map((link) => link.trim()).filter(Boolean) },
       createdAt: Date.now(),
     };
     const updated = [...outcomes, outcome];
     setOutcomes(updated);
     saveOutcomes(updated);
     setSelectedIndex(updated.length - 1);
-    setCreatingOutcome(false);
-    setNewOutcomeName("");
-    setNewOutcomeProjectPath("");
-    setNewOutcomeGoal("");
-    setNewOutcomeCriteria("");
-    setNewOutcomeConstraints("");
+    setRightSidebar("spec");
+    resetSpecificationFlow();
     setExecutions((prev) => ({
       ...prev,
       [outcome.id]: [
         { id: crypto.randomUUID(), name: "OpenCode", status: "idle" },
       ],
     }));
+    void runSpecification(outcome);
+  };
+
+  const advanceSpecificationFlow = () => {
+    const answer = specificationInput.trim();
+    const askNext = (question: string) => setSpecificationMessages((previous) => [...previous, { role: "assistant", content: question }]);
+    if (specificationStep === "name") {
+      if (!answer) return;
+      setNewOutcomeName(answer);
+      setSpecificationMessages((previous) => [...previous, { role: "user", content: answer }]);
+      setSpecificationInput("");
+      setSpecificationStep("project");
+      askNext("Which local project should this outcome work in? Choose its folder below.");
+      return;
+    }
+    if (specificationStep === "goal") {
+      if (!answer) return;
+      setNewOutcomeGoal(answer);
+      setSpecificationMessages((previous) => [...previous, { role: "user", content: answer }]);
+      setSpecificationInput("");
+      setSpecificationStep("constraints");
+      askNext("Are there any constraints, technical decisions, or things that must not change? You can skip this.");
+      return;
+    }
+    if (specificationStep === "constraints") {
+      setNewOutcomeConstraints(answer);
+      setSpecificationMessages((previous) => [...previous, { role: "user", content: answer || "No specific constraints." }]);
+      setSpecificationInput("");
+      setSpecificationStep("criteria");
+      askNext("What must be true for you to consider this complete? Put each acceptance criterion on its own line.");
+      return;
+    }
+    if (specificationStep === "criteria") {
+      if (!answer) return;
+      setNewOutcomeCriteria(answer);
+      setSpecificationMessages((previous) => [...previous, { role: "user", content: answer }]);
+      setSpecificationInput("");
+      setSpecificationStep("links");
+      askNext("Share any useful links or references (Slack, Figma, Supabase, docs), one per line. You can skip this.");
+      return;
+    }
+    if (specificationStep === "links") finalizeSpecificationFlow(answer);
   };
 
   const deleteOutcome = (index: number) => {
@@ -233,7 +302,10 @@ function App() {
 
   const chooseProjectForNewOutcome = async () => {
     const projectPath = await window.api.selectProject();
-    if (projectPath) setNewOutcomeProjectPath(projectPath);
+    if (!projectPath) return;
+    setNewOutcomeProjectPath(projectPath);
+    setSpecificationMessages((previous) => [...previous, { role: "user", content: projectPath }, { role: "assistant", content: "What outcome do you want to achieve in this project?" }]);
+    setSpecificationStep("goal");
   };
 
   const chooseProjectForOutcome = async (outcomeId: string) => {
@@ -253,6 +325,41 @@ function App() {
         ex.id === execId ? { ...ex, status } : ex
       ),
     }));
+  };
+
+  const runSpecification = async (outcome: Outcome) => {
+    const firstExec = executions[outcome.id]?.[0];
+    setLoading(true);
+    setLiveOutput((previous) => ({ ...previous, [outcome.id]: "" }));
+    if (firstExec) updateExecution(outcome.id, firstExec.id, "working");
+    try {
+      const reply = await window.api.runOpenCode({
+        outcomeId: outcome.id,
+        projectPath: outcome.projectPath,
+        prompt: buildSpecificationPrompt(outcome),
+      });
+      const confidence = Number.parseInt(reply.match(/CONFIDENCE\s*:\s*(\d{1,3})/i)?.[1] ?? "95", 10);
+      const readyToImplement = confidence >= 95;
+      setOutcomes((previous) => previous.map((item) => item.id === outcome.id ? {
+        ...item,
+        status: readyToImplement ? "Ready to implement" : "Needs input",
+        specification: { ...(item.specification ?? { links: [] }), status: "ready", plan: reply, confidence },
+        messages: [...item.messages, { role: "assistant", content: reply }],
+        events: [...item.events, makeEvent("specification.ready", readyToImplement ? `Specification ready with ${confidence}% confidence; starting implementation` : `Specification is only ${confidence}% confident and needs clarification`)],
+      } : item));
+      if (firstExec) updateExecution(outcome.id, firstExec.id, "done");
+      if (readyToImplement) window.setTimeout(() => void runImplementation(outcome.id, "Implement the approved specification completely. Work through every acceptance criterion."), 0);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setOutcomes((previous) => previous.map((item) => item.id === outcome.id ? {
+        ...item,
+        status: "Needs input",
+        events: [...item.events, makeEvent("specification.failed", message)],
+      } : item));
+      if (firstExec) updateExecution(outcome.id, firstExec.id, "attention");
+    } finally {
+      setLoading(false);
+    }
   };
 
   const runImplementation = async (outcomeId: string, instruction: string) => {
@@ -340,7 +447,7 @@ function App() {
       setOutcomes((previous) => previous.map((item) => item.id === outcome.id ? {
         ...item,
         status: "Applied",
-        events: [...item.events, makeEvent("review.approved", "Changes committed and applied to the selected project's current branch")],
+        events: [...item.events, makeEvent("review.approved", outcome.prepared!.sourcePath === outcome.prepared!.worktreePath ? "Changes were made directly in the selected project folder" : "Changes committed and applied to the selected project's current branch")],
       } : item));
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -374,6 +481,7 @@ function App() {
   };
 
   const toggleQuestionAnswer = (outcome: Outcome, questionIndex: number, label: string, multiple: boolean) => {
+    setDecisionErrors((previous) => ({ ...previous, [outcome.id]: "" }));
     setQuestionAnswers((previous) => {
       const answers = [...(previous[outcome.id] ?? [])];
       const current = answers[questionIndex] ?? [];
@@ -389,6 +497,8 @@ function App() {
     const answers = providedAnswers ?? questionAnswers[outcome.id] ?? [];
     if (answers.length !== outcome.question.questions.length || answers.some((answer) => answer.length === 0)) return;
     try {
+      setSubmittingDecisionFor(outcome.id);
+      setDecisionErrors((previous) => ({ ...previous, [outcome.id]: "" }));
       await window.api.answerOpenCodeQuestion({
         runId: outcome.question.runId,
         requestId: outcome.question.requestId,
@@ -403,10 +513,25 @@ function App() {
       } : item));
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
+      if (message.includes("no longer active")) {
+        const decision = answers.map((answer) => answer.join(", ")).join(" | ");
+        setOutcomes((previous) => previous.map((item) => item.id === outcome.id ? {
+          ...item,
+          status: "Working",
+          question: undefined,
+          messages: [...item.messages, { role: "user", content: `Decision: ${decision}` }],
+          events: [...item.events, makeEvent("agent.decision_restarted", "The previous agent session ended; starting a new session with your decision")],
+        } : item));
+        void runImplementation(outcome.id, `Continue the existing outcome from its current worktree. The previous agent session stopped while awaiting a decision. The user's decision is: ${decision}`);
+        return;
+      }
+      setDecisionErrors((previous) => ({ ...previous, [outcome.id]: message }));
       setOutcomes((previous) => previous.map((item) => item.id === outcome.id ? {
         ...item,
         events: [...item.events, makeEvent("agent.answer_failed", message)],
       } : item));
+    } finally {
+      setSubmittingDecisionFor(null);
     }
   };
 
@@ -416,14 +541,17 @@ function App() {
     const outcome = outcomes[selectedIndex];
     const outcomeId = outcome.id;
     const content = input.trim();
-    setInput("");
 
     if (outcome.question) {
-      const answers = outcome.question.questions.map((_, index) => questionAnswers[outcome.id]?.[index]?.length ? questionAnswers[outcome.id][index] : [content]);
-      setQuestionAnswers((previous) => ({ ...previous, [outcome.id]: answers }));
-      await submitQuestionAnswers(outcome, answers);
       return;
     }
+
+    if (!outcome.projectPath) {
+      setRightSidebar("spec");
+      return;
+    }
+
+    setInput("");
 
     if (loadingRef.current) {
       setQueue((prev) => [...prev, { id: crypto.randomUUID(), content }]);
@@ -447,6 +575,25 @@ function App() {
   const currentQueue = queue;
   const executionsList = currentOutcome ? executions[currentOutcome.id] || [] : [];
   const toggleRightSidebar = (view: RightSidebarView) => setRightSidebar((current) => current === view ? null : view);
+
+  const updateSidebarScrollIntent = () => {
+    const sidebar = sidebarScrollRef.current;
+    if (!sidebar) return;
+    sidebarAtLatestRef.current = sidebar.scrollHeight - sidebar.scrollTop - sidebar.clientHeight < 40;
+  };
+
+  useEffect(() => {
+    sidebarAtLatestRef.current = true;
+  }, [rightSidebar, currentOutcome?.id]);
+
+  useEffect(() => {
+    if (!sidebarAtLatestRef.current || (rightSidebar !== "conversation" && rightSidebar !== "timeline")) return;
+    const frame = requestAnimationFrame(() => {
+      const sidebar = sidebarScrollRef.current;
+      if (sidebar) sidebar.scrollTop = sidebar.scrollHeight;
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [rightSidebar, currentOutcome?.id, currentOutcome?.events.length, currentLiveOutput]);
 
   const EXEC_STATUS_TEXT: Record<AgentExecution["status"], string> = {
     idle: "idle",
@@ -482,7 +629,7 @@ function App() {
             <div className="flex items-center justify-between px-3 pt-2.5 pb-2 border-b border-ctp-surface0">
               <span className="text-sm font-medium text-ctp-overlay0">Outcomes</span>
               <Tooltip text="Create new outcome">
-                <button onClick={() => { setSelectedIndex(null); setCreatingOutcome(true); }} className="w-6 h-6 flex items-center justify-center rounded-md text-ctp-overlay0 hover:text-ctp-text hover:bg-ctp-surface0 transition-colors">
+                <button onClick={() => { setSelectedIndex(null); beginSpecificationFlow(); }} className="w-6 h-6 flex items-center justify-center rounded-md text-ctp-overlay0 hover:text-ctp-text hover:bg-ctp-surface0 transition-colors">
                   <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                     <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
                   </svg>
@@ -600,8 +747,8 @@ function App() {
                       <div className="text-[11px] font-medium text-ctp-overlay0 uppercase tracking-wider">Review</div>
                       {currentOutcome.status === "Ready to review" && currentOutcome.prepared && (
                         <div className="flex gap-2">
-                          <button onClick={() => void approveOutcome(currentOutcome)} className="text-xs px-2 py-1 rounded bg-ctp-green text-ctp-crust font-medium hover:opacity-80">Apply changes</button>
-                          <button onClick={() => void discardOutcomeChanges(currentOutcome)} className="text-xs px-2 py-1 rounded bg-ctp-surface0 text-ctp-text hover:bg-ctp-surface1">Discard</button>
+                          <button onClick={() => void approveOutcome(currentOutcome)} className="text-xs px-2 py-1 rounded bg-ctp-green text-ctp-crust font-medium hover:opacity-80">{currentOutcome.prepared.sourcePath === currentOutcome.prepared.worktreePath ? "Mark as applied" : "Apply changes"}</button>
+                          {currentOutcome.prepared.sourcePath !== currentOutcome.prepared.worktreePath && <button onClick={() => void discardOutcomeChanges(currentOutcome)} className="text-xs px-2 py-1 rounded bg-ctp-surface0 text-ctp-text hover:bg-ctp-surface1">Discard</button>}
                         </div>
                       )}
                     </div>
@@ -649,7 +796,7 @@ function App() {
                   <div className="hidden px-4 py-3 border-b border-ctp-surface0">
                     <div className="text-[11px] font-medium text-ctp-overlay0 uppercase tracking-wider mb-1.5">Timeline</div>
                     <div className="space-y-1.5">
-                      {[...currentOutcome.events].reverse().map((ev) => (
+                      {currentOutcome.events.map((ev) => (
                         <div key={ev.id} className="flex items-start gap-2 text-xs">
                           <span className="text-ctp-overlay0 shrink-0 font-mono mt-px">
                             {new Date(ev.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
@@ -698,10 +845,10 @@ function App() {
                 </div>
               </div>
 
-              <div className="p-3 border-t border-ctp-surface0">
+              <div className="p-3">
                 <div className="relative">
                   {currentOutcome.question && (
-                    <div className="absolute bottom-full left-1/2 z-20 mb-3 w-4/5 max-h-[42vh] -translate-x-1/2 overflow-y-auto rounded-2xl border border-ctp-yellow/40 bg-ctp-mantle/95 p-4 shadow-2xl shadow-ctp-crust/50 backdrop-blur select-text">
+                    <div className="absolute bottom-full left-1/2 z-30 mb-[22px] w-[90%] max-h-[42vh] -translate-x-1/2 overflow-y-auto rounded-2xl border border-ctp-yellow/40 bg-ctp-mantle p-4 shadow-2xl shadow-ctp-crust/50 pointer-events-auto select-text">
                       <div className="mb-3 flex items-center gap-2 text-[11px] font-medium uppercase tracking-wider text-ctp-yellow">
                         <span className="h-2 w-2 rounded-full bg-ctp-yellow animate-pulse" />
                         OpenCode needs your decision
@@ -717,6 +864,7 @@ function App() {
                                   const active = selected.includes(option.label);
                                   return (
                                     <button
+                                      type="button"
                                       key={option.label}
                                       onClick={() => toggleQuestionAnswer(currentOutcome, questionIndex, option.label, Boolean(question.multiple))}
                                       className={`block w-full rounded-xl border px-3 py-2 text-left text-xs transition-colors ${active ? "border-ctp-mauve bg-ctp-mauve/15 text-ctp-text" : "border-ctp-surface0 bg-ctp-base text-ctp-subtext1 hover:bg-ctp-surface0"}`}
@@ -730,12 +878,18 @@ function App() {
                             </div>
                           );
                         })}
-                        <button
-                          onClick={() => void submitQuestionAnswers(currentOutcome)}
-                          disabled={(questionAnswers[currentOutcome.id] ?? []).length !== currentOutcome.question.questions.length || (questionAnswers[currentOutcome.id] ?? []).some((answer) => answer.length === 0)}
-                          className="inline-flex h-8 items-center justify-center rounded-xl bg-ctp-mauve px-3 text-xs font-medium text-ctp-crust transition-opacity hover:opacity-90 disabled:opacity-40"
-                        >
-                          Continue agent
+                    {decisionErrors[currentOutcome.id] && (
+                      <div className="rounded-xl border border-ctp-red/40 bg-ctp-red/10 px-3 py-2 text-xs text-ctp-red">
+                        {decisionErrors[currentOutcome.id]}
+                      </div>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => void submitQuestionAnswers(currentOutcome)}
+                      disabled={submittingDecisionFor === currentOutcome.id || (questionAnswers[currentOutcome.id] ?? []).length !== currentOutcome.question.questions.length || (questionAnswers[currentOutcome.id] ?? []).some((answer) => answer.length === 0)}
+                      className="inline-flex h-8 items-center justify-center rounded-xl bg-ctp-mauve px-3 text-xs font-medium text-ctp-crust transition-opacity hover:opacity-90 disabled:opacity-40"
+                    >
+                      {submittingDecisionFor === currentOutcome.id ? "Sending decision..." : "Continue with decision"}
                         </button>
                       </div>
                     </div>
@@ -745,12 +899,13 @@ function App() {
                     value={input}
                     onChange={(e) => setInput(e.target.value)}
                     onKeyDown={(e) => e.key === "Enter" && sendMessage()}
-                    placeholder={loading ? "Message will be queued..." : "Type a message..."}
-                    className="w-full px-3 py-2 pr-10 rounded-lg bg-ctp-base border border-ctp-surface0 text-ctp-text text-sm placeholder-ctp-overlay0 focus:outline-none focus:border-ctp-mauve transition-colors"
+                    disabled={Boolean(currentOutcome.question)}
+                    placeholder={currentOutcome.question ? "Choose an option above to continue..." : loading ? "Message will be queued..." : "Type a message..."}
+                    className="w-full px-3 py-2 pr-10 rounded-lg bg-ctp-base border border-ctp-surface0 text-ctp-text text-sm placeholder-ctp-overlay0 focus:outline-none focus:border-ctp-mauve transition-colors disabled:cursor-not-allowed disabled:opacity-60"
                   />
                   <button
                     onClick={sendMessage}
-                    disabled={!input.trim()}
+                    disabled={!input.trim() || Boolean(currentOutcome.question)}
                     className="absolute right-2 top-1/2 -translate-y-1/2 w-7 h-7 flex items-center justify-center rounded-md text-ctp-overlay0 hover:text-ctp-text hover:bg-ctp-surface0 transition-colors disabled:opacity-30"
                   >
                     <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -766,68 +921,20 @@ function App() {
               </div>
             </>
           ) : creatingOutcome ? (
-            <div className="flex-1 flex flex-col overflow-y-auto select-text p-6 max-w-2xl">
-              <h2 className="text-lg font-medium text-ctp-text mb-4">New Outcome</h2>
-              <label className="text-[11px] font-medium text-ctp-overlay0 uppercase tracking-wider mb-1">Name</label>
-              <input
-                autoFocus
-                type="text"
-                value={newOutcomeName}
-                onChange={(e) => setNewOutcomeName(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && createOutcome()}
-                placeholder="e.g. Add Google OAuth"
-                className="w-full px-3 py-2 rounded-lg bg-ctp-base border border-ctp-surface0 text-sm focus:outline-none focus:border-ctp-mauve mb-4"
-              />
-              <label className="text-[11px] font-medium text-ctp-overlay0 uppercase tracking-wider mb-1">Project</label>
-              <div className="flex items-center gap-2 mb-4">
-                <div className="min-w-0 flex-1 text-xs text-ctp-subtext1 truncate px-3 py-2 rounded-lg bg-ctp-base border border-ctp-surface0">
-                  {newOutcomeProjectPath || "No project selected"}
+            <div className="flex-1 flex min-h-0 flex-col select-text">
+              <div className="border-b border-ctp-surface0 px-4 py-3"><h2 className="text-lg font-medium text-ctp-text">New outcome</h2><div className="mt-1 text-xs text-ctp-overlay0">Specification flow</div></div>
+              <div className="flex-1 overflow-y-auto px-4 py-5">
+                <div className="mx-auto max-w-2xl space-y-4">
+                  {specificationMessages.map((message, index) => <div key={index} className={`max-w-[85%] rounded-2xl px-4 py-3 text-sm whitespace-pre-wrap ${message.role === "assistant" ? "bg-ctp-surface0 text-ctp-text" : "ml-auto bg-ctp-mauve/15 text-ctp-text"}`}>{message.content}</div>)}
+                  {specificationStep === "project" && <div className="max-w-[85%] rounded-2xl border border-ctp-surface0 bg-ctp-base p-4"><div className="mb-2 text-xs text-ctp-subtext1">{newOutcomeProjectPath || "No folder selected"}</div><button onClick={() => void chooseProjectForNewOutcome()} className="rounded-xl bg-ctp-surface0 px-3 py-2 text-sm hover:bg-ctp-surface1">Choose project</button></div>}
                 </div>
-                <button
-                  onClick={() => void chooseProjectForNewOutcome()}
-                  className="shrink-0 px-3 py-2 rounded-lg bg-ctp-surface0 text-ctp-text text-sm hover:bg-ctp-surface1"
-                >
-                  Choose
-                </button>
               </div>
-              <label className="text-[11px] font-medium text-ctp-overlay0 uppercase tracking-wider mb-1">Goal</label>
-              <textarea
-                value={newOutcomeGoal}
-                onChange={(e) => setNewOutcomeGoal(e.target.value)}
-                placeholder="What should this outcome achieve?"
-                rows={3}
-                className="w-full px-3 py-2 rounded-lg bg-ctp-base border border-ctp-surface0 text-sm focus:outline-none focus:border-ctp-mauve resize-none mb-4"
-              />
-              <label className="text-[11px] font-medium text-ctp-overlay0 uppercase tracking-wider mb-1">Constraints</label>
-              <textarea
-                value={newOutcomeConstraints}
-                onChange={(e) => setNewOutcomeConstraints(e.target.value)}
-                placeholder="Technical or product constraints (one per line)"
-                rows={3}
-                className="w-full px-3 py-2 rounded-lg bg-ctp-base border border-ctp-surface0 text-sm focus:outline-none focus:border-ctp-mauve resize-none mb-4"
-              />
-              <label className="text-[11px] font-medium text-ctp-overlay0 uppercase tracking-wider mb-1">Acceptance criteria</label>
-              <textarea
-                value={newOutcomeCriteria}
-                onChange={(e) => setNewOutcomeCriteria(e.target.value)}
-                placeholder="Each line becomes one criterion"
-                rows={4}
-                className="w-full px-3 py-2 rounded-lg bg-ctp-base border border-ctp-surface0 text-sm focus:outline-none focus:border-ctp-mauve resize-none mb-6"
-              />
-              <div className="flex gap-2">
-                <button
-                  onClick={createOutcome}
-                  disabled={!newOutcomeName.trim()}
-                  className="px-4 py-2 rounded-lg bg-ctp-mauve text-ctp-crust text-sm font-medium disabled:opacity-40 hover:opacity-90"
-                >
-                  Create outcome
-                </button>
-                <button
-                  onClick={() => { setCreatingOutcome(false); setNewOutcomeName(""); setNewOutcomeProjectPath(""); setNewOutcomeGoal(""); setNewOutcomeConstraints(""); setNewOutcomeCriteria(""); }}
-                  className="px-4 py-2 rounded-lg bg-ctp-surface0 text-ctp-text text-sm hover:bg-ctp-surface1"
-                >
-                  Cancel
-                </button>
+              <div className="p-3">
+                <div className="mx-auto flex max-w-2xl gap-2">
+                  {specificationStep !== "project" && <textarea autoFocus value={specificationInput} onChange={(e) => setSpecificationInput(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); advanceSpecificationFlow(); } }} rows={specificationStep === "criteria" || specificationStep === "links" ? 3 : 2} placeholder={specificationStep === "constraints" || specificationStep === "links" ? "Optional — you can leave this empty" : "Write your answer..."} className="min-h-11 flex-1 resize-none rounded-xl border border-ctp-surface0 bg-ctp-base px-3 py-2 text-sm text-ctp-text placeholder-ctp-overlay0 focus:border-ctp-mauve focus:outline-none" />}
+                  {specificationStep === "project" ? null : <button onClick={advanceSpecificationFlow} className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-ctp-mauve text-ctp-crust disabled:opacity-40" disabled={specificationStep !== "constraints" && specificationStep !== "links" && !specificationInput.trim()}><svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M5 12h14M12 5l7 7-7 7" /></svg></button>}
+                </div>
+                <button onClick={resetSpecificationFlow} className="mx-auto mt-2 block text-xs text-ctp-overlay0 hover:text-ctp-text">Cancel</button>
               </div>
             </div>
           ) : (
@@ -843,7 +950,7 @@ function App() {
               <span className="text-sm font-medium text-ctp-text">{rightSidebar === "conversation" ? "Live output" : rightSidebar === "spec" ? "Outcome spec" : rightSidebar === "review" ? "Review" : "Timeline"}</span>
               <button aria-label="Close sidebar" onClick={() => setRightSidebar(null)} className="inline-flex h-8 w-8 items-center justify-center rounded-md text-ctp-overlay0 transition-colors hover:bg-ctp-surface0 hover:text-ctp-text">×</button>
             </div>
-            <div className="flex-1 overflow-y-auto select-text p-4">
+            <div ref={sidebarScrollRef} onScroll={updateSidebarScrollIntent} className="flex-1 overflow-y-auto select-text p-4">
               {rightSidebar === "conversation" && (
                 currentLiveOutput ? (
                   <pre className="whitespace-pre-wrap break-words rounded-lg border border-ctp-surface0 bg-ctp-base p-3 text-xs leading-relaxed text-ctp-subtext1 font-mono">{currentLiveOutput}</pre>
@@ -854,13 +961,14 @@ function App() {
               {rightSidebar === "spec" && <div className="space-y-5">
                 <div><div className="text-[11px] uppercase tracking-wider text-ctp-overlay0 mb-1">Project</div><div className="text-xs text-ctp-subtext1 break-words">{currentOutcome.projectPath || "No project selected"}</div><button onClick={() => void chooseProjectForOutcome(currentOutcome.id)} className="mt-2 text-xs px-2 py-1 rounded bg-ctp-surface0 hover:bg-ctp-surface1">{currentOutcome.projectPath ? "Change project" : "Choose project"}</button></div>
                 <div><div className="text-[11px] uppercase tracking-wider text-ctp-overlay0 mb-1">Goal</div><div className="text-sm whitespace-pre-wrap">{currentOutcome.goal || currentOutcome.name}</div></div>
+                {currentOutcome.specification && <div><div className="text-[11px] uppercase tracking-wider text-ctp-overlay0 mb-1">Specification</div>{currentOutcome.specification.status === "analyzing" ? <div className="text-sm text-ctp-blue animate-pulse">Inspecting project and preparing a plan…</div> : <><div className="mb-2 text-xs text-ctp-mauve">Confidence: {currentOutcome.specification.confidence}%</div><div className="max-h-72 overflow-y-auto whitespace-pre-wrap rounded-lg border border-ctp-surface0 bg-ctp-base p-3 text-xs text-ctp-subtext1">{currentOutcome.specification.plan}</div><button onClick={() => void runImplementation(currentOutcome.id, "Implement the approved specification completely. Work through every acceptance criterion.")} className="mt-3 rounded-xl bg-ctp-mauve px-3 py-2 text-xs font-medium text-ctp-crust hover:opacity-90">Start implementation</button></>}</div>}
                 {currentOutcome.constraints && <div><div className="text-[11px] uppercase tracking-wider text-ctp-overlay0 mb-1">Constraints</div><div className="text-sm whitespace-pre-wrap">{currentOutcome.constraints}</div></div>}
                 <div><div className="text-[11px] uppercase tracking-wider text-ctp-overlay0 mb-1">Acceptance criteria</div>{currentOutcome.acceptanceCriteria.length ? <ul className="space-y-2">{currentOutcome.acceptanceCriteria.map((criterion, index) => <li key={index} className="text-sm">— {criterion}</li>)}</ul> : <div className="text-sm text-ctp-overlay0">No criteria yet</div>}</div>
                 {executionsList.length > 0 && <div><div className="text-[11px] uppercase tracking-wider text-ctp-overlay0 mb-1">Agents</div>{executionsList.map((execution) => <div key={execution.id} className="flex gap-2 text-sm"><span>{execution.name}</span><span className={EXEC_STATUS_COLOR[execution.status]}>{EXEC_STATUS_TEXT[execution.status]}</span></div>)}</div>}
               </div>}
-              {rightSidebar === "timeline" && <div className="space-y-3">{[...currentOutcome.events].reverse().map((event) => <div key={event.id} className="flex gap-2 text-xs"><span className="shrink-0 text-ctp-overlay0 font-mono">{new Date(event.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span><span className="text-ctp-subtext1">{event.message}</span></div>)}</div>}
+              {rightSidebar === "timeline" && <div className="space-y-3">{currentOutcome.events.map((event) => <div key={event.id} className="flex gap-2 text-xs"><span className="shrink-0 text-ctp-overlay0 font-mono">{new Date(event.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span><span className="text-ctp-subtext1">{event.message}</span></div>)}</div>}
               {rightSidebar === "review" && <div className="space-y-3">
-                {currentOutcome.status === "Ready to review" && currentOutcome.prepared && <div className="flex gap-2"><button onClick={() => void approveOutcome(currentOutcome)} className="text-xs px-2 py-1 rounded bg-ctp-green text-ctp-crust">Apply changes</button><button onClick={() => void discardOutcomeChanges(currentOutcome)} className="text-xs px-2 py-1 rounded bg-ctp-surface0">Discard</button></div>}
+                {currentOutcome.status === "Ready to review" && currentOutcome.prepared && <div className="flex gap-2"><button onClick={() => void approveOutcome(currentOutcome)} className="text-xs px-2 py-1 rounded bg-ctp-green text-ctp-crust">{currentOutcome.prepared.sourcePath === currentOutcome.prepared.worktreePath ? "Mark as applied" : "Apply changes"}</button>{currentOutcome.prepared.sourcePath !== currentOutcome.prepared.worktreePath && <button onClick={() => void discardOutcomeChanges(currentOutcome)} className="text-xs px-2 py-1 rounded bg-ctp-surface0">Discard</button>}</div>}
                 {currentOutcome.validation?.map((check) => <details key={check.command} className="rounded border border-ctp-surface0 p-2"><summary className={`text-xs cursor-pointer ${check.passed ? "text-ctp-green" : "text-ctp-red"}`}>{check.passed ? "✓" : "×"} {check.command}</summary><pre className="mt-2 max-h-40 overflow-auto whitespace-pre-wrap text-xs text-ctp-subtext1">{check.output}</pre></details>)}
                 {currentOutcome.visualValidation && <div className={`rounded border p-2 text-xs ${currentOutcome.visualValidation.passed ? "border-ctp-green/40" : "border-ctp-red/40"}`}><div className={currentOutcome.visualValidation.passed ? "text-ctp-green" : "text-ctp-red"}>{currentOutcome.visualValidation.passed ? "✓" : "×"} Visual browser validation</div><div className="mt-1 text-ctp-subtext1">{currentOutcome.visualValidation.message}</div>{currentOutcome.visualValidation.screenshots.map((screenshot) => <img key={screenshot.label} src={screenshot.dataUrl} alt={screenshot.label} className="mt-3 rounded border border-ctp-surface0" />)}</div>}
                 {currentOutcome.review && <details className="rounded border border-ctp-surface0 p-2"><summary className="text-xs cursor-pointer">Changed files ({currentOutcome.review.changedFiles.length})</summary><pre className="mt-2 max-h-64 overflow-auto whitespace-pre-wrap text-xs text-ctp-subtext1">{currentOutcome.review.summary}{"\n"}{currentOutcome.review.changedFiles.join("\n")}{"\n\n"}{currentOutcome.review.diff}</pre></details>}
@@ -912,7 +1020,12 @@ function buildOpenCodePrompt(outcome: Outcome, instruction: string): string {
     : "- No explicit acceptance criteria supplied";
   const constraints = outcome.constraints || "None supplied";
 
-  return `You are implementing an Akodo outcome in the current local project.\n\nOutcome: ${outcome.name}\nGoal: ${outcome.goal || outcome.name}\nConstraints:\n${constraints}\nAcceptance criteria:\n${criteria}\n\nImplementation instruction:\n${instruction}\n\nScope boundary: work only inside the current outcome worktree. Do not read, modify, create, or delete files outside this repository folder. Do not navigate to parent folders, the user home, or other projects.\n\nBrowser validation: when the outcome changes a web UI or has UI-related acceptance criteria, you have Playwright available through Node. Start the local web preview, use Playwright to exercise the concrete user flows implied by the acceptance criteria, verify the expected state at desktop and mobile viewport sizes, and inspect browser console errors. Do not merely write a browser test; actually run it. Keep temporary validation scripts out of the final diff.\n\nInspect the repository first, implement only what is needed, run relevant local checks, and summarize the changes, browser scenarios, and commands you ran. Do not commit, push, or deploy.`;
+  return `You are implementing an Akodo outcome in the current local project.\n\nOutcome: ${outcome.name}\nGoal: ${outcome.goal || outcome.name}\nConstraints:\n${constraints}\nAcceptance criteria:\n${criteria}\n\nImplementation instruction:\n${instruction}\n\nScope boundary: work only inside the current outcome workspace. Do not read, modify, create, or delete files outside this selected project folder. Do not navigate to parent folders, the user home, or other projects.\n\nBrowser validation: when the outcome changes a web UI or has UI-related acceptance criteria, you have Playwright available through Node. Start the local web preview, use Playwright to exercise the concrete user flows implied by the acceptance criteria, verify the expected state at desktop and mobile viewport sizes, and inspect browser console errors. Do not merely write a browser test; actually run it. Keep temporary validation scripts out of the final diff.\n\nInspect the project first, implement only what is needed, run relevant local checks, and summarize the changes, browser scenarios, and commands you ran. Do not commit, push, or deploy.`;
+}
+
+function buildSpecificationPrompt(outcome: Outcome): string {
+  const links = outcome.specification?.links.length ? outcome.specification.links.map((link) => `- ${link}`).join("\n") : "- No external links were provided";
+  return `You are the specification agent for an Akodo outcome. Work in read-only planning mode: inspect the selected project folder and relevant files, but do not modify files, run destructive commands, commit, push, or deploy.\n\nOutcome: ${outcome.name}\nGoal: ${outcome.goal}\nConstraints:\n${outcome.constraints || "None supplied"}\nAcceptance criteria:\n${outcome.acceptanceCriteria.map((criterion) => `- ${criterion}`).join("\n") || "- None supplied"}\nReference links:\n${links}\n\nUse a link only when it is accessible in your environment; clearly state if a reference could not be read. Inspect the codebase to identify the affected areas, dependencies, risks, test approach, and a concrete implementation plan. If any answer is necessary to deliver the outcome reliably, ask concise structured questions with the question tool and wait for the user’s decision. Do not guess material product or technical decisions. When you have enough information, return a final specification with these headings: Scope, Plan, Validation, Risks. End with a separate line in the exact format CONFIDENCE: NN, where NN is your honest confidence percentage that the task can be implemented successfully.`;
 }
 
 export default App;
