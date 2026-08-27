@@ -83,6 +83,7 @@ const STATUS_DOT: Record<OutcomeStatus, string> = {
 function App() {
   type RightSidebarView = "conversation" | "timeline" | "review" | "spec";
   const [panelWidth, setPanelWidth] = useState(() => ((250 + 50) / window.innerWidth) * 100);
+  const [rightWidth, setRightWidth] = useState(330);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [rightSidebar, setRightSidebar] = useState<RightSidebarView | null>(null);
   const [outcomes, setOutcomes] = useState<Outcome[]>(loadOutcomes);
@@ -110,6 +111,7 @@ function App() {
   const outcomeCountRef = parseInt(localStorage.getItem("akodo-outcome-count") ?? "0", 10);
   const outcomeCount = useRef(outcomeCountRef);
   const isDragging = useRef(false);
+  const dragTarget = useRef<"left" | "right" | null>(null);
   const startX = useRef(0);
   const startWidth = useRef(0);
   const loadingRef = useRef(false);
@@ -154,23 +156,39 @@ function App() {
 
   const onMouseDown = useCallback((e: React.MouseEvent) => {
     isDragging.current = true;
+    dragTarget.current = "left";
     startX.current = e.clientX;
     startWidth.current = panelWidth;
     document.body.style.cursor = "col-resize";
     document.body.style.userSelect = "none";
   }, [panelWidth]);
 
+  const onRightMouseDown = useCallback((e: React.MouseEvent) => {
+    isDragging.current = true;
+    dragTarget.current = "right";
+    startX.current = e.clientX;
+    startWidth.current = rightWidth;
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+  }, [rightWidth]);
+
   useEffect(() => {
     const onMouseMove = (e: MouseEvent) => {
       if (!isDragging.current) return;
       const dx = e.clientX - startX.current;
-      const newWidth = startWidth.current + (dx / window.innerWidth) * 100;
-      const minPercent = (250 / window.innerWidth) * 100;
-      setPanelWidth(Math.min(Math.max(newWidth, minPercent), 85));
+      if (dragTarget.current === "right") {
+        const newWidth = startWidth.current - dx;
+        setRightWidth(Math.min(Math.max(newWidth, 250), window.innerWidth * 0.85));
+      } else {
+        const newWidth = startWidth.current + (dx / window.innerWidth) * 100;
+        const minPercent = (250 / window.innerWidth) * 100;
+        setPanelWidth(Math.min(Math.max(newWidth, minPercent), 85));
+      }
     };
 
     const onMouseUp = () => {
       isDragging.current = false;
+      dragTarget.current = null;
       document.body.style.cursor = "";
       document.body.style.userSelect = "";
     };
@@ -973,7 +991,12 @@ function App() {
         </div>
 
         {currentOutcome && rightSidebar && (
-          <aside className="w-[330px] shrink-0 rounded-xl border border-ctp-surface0 bg-ctp-mantle mr-[5px] overflow-hidden flex flex-col">
+          <aside className="shrink-0 rounded-xl border border-ctp-surface0 bg-ctp-mantle mr-[5px] flex flex-col relative" style={{ width: rightWidth }}>
+            <div
+              onMouseDown={onRightMouseDown}
+              className="absolute top-0 left-[-4.5px] w-1 h-full cursor-col-resize hover:bg-ctp-surface0 active:bg-ctp-mauve transition-colors"
+            />
+            <div className="flex flex-col flex-1 min-h-0 overflow-hidden">
             <div className="flex items-center justify-between px-3 py-3 border-b border-ctp-surface0">
               <span className="text-sm font-medium text-ctp-text">{rightSidebar === "conversation" ? "Live output" : rightSidebar === "spec" ? "Outcome spec" : rightSidebar === "review" ? "Review" : "Timeline"}</span>
               <button aria-label="Close sidebar" onClick={() => setRightSidebar(null)} className="inline-flex h-8 w-8 items-center justify-center rounded-md text-ctp-overlay0 transition-colors hover:bg-ctp-surface0 hover:text-ctp-text">×</button>
@@ -1002,6 +1025,7 @@ function App() {
                 {currentOutcome.review && <details className="rounded border border-ctp-surface0 p-2"><summary className="text-xs cursor-pointer">Changed files ({currentOutcome.review.changedFiles.length})</summary><pre className="mt-2 max-h-64 overflow-auto whitespace-pre-wrap text-xs text-ctp-subtext1">{currentOutcome.review.summary}{"\n"}{currentOutcome.review.changedFiles.join("\n")}{"\n\n"}{currentOutcome.review.diff}</pre></details>}
                 {!currentOutcome.validation && !currentOutcome.visualValidation && !currentOutcome.review && <div className="text-sm text-ctp-overlay0">Review appears after an agent run.</div>}
               </div>}
+            </div>
             </div>
           </aside>
         )}
