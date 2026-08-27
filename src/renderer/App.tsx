@@ -701,7 +701,7 @@ function App() {
               <div className="p-3 border-t border-ctp-surface0">
                 <div className="relative">
                   {currentOutcome.question && (
-                    <div className="absolute bottom-full right-0 z-20 mb-3 w-[28rem] max-w-[calc(100vw-2rem)] max-h-[42vh] overflow-y-auto rounded-2xl border border-ctp-yellow/40 bg-ctp-mantle/95 p-4 shadow-2xl shadow-ctp-crust/50 backdrop-blur select-text">
+                    <div className="absolute bottom-full left-1/2 z-20 mb-3 w-4/5 max-h-[42vh] -translate-x-1/2 overflow-y-auto rounded-2xl border border-ctp-yellow/40 bg-ctp-mantle/95 p-4 shadow-2xl shadow-ctp-crust/50 backdrop-blur select-text">
                       <div className="mb-3 flex items-center gap-2 text-[11px] font-medium uppercase tracking-wider text-ctp-yellow">
                         <span className="h-2 w-2 rounded-full bg-ctp-yellow animate-pulse" />
                         OpenCode needs your decision
