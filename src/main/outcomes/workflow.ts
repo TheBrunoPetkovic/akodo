@@ -53,7 +53,12 @@ export class OutcomeWorkflow {
       try {
         results.push({ command: `${runner} run ${check}`, passed: true, output: await this.command(runner, ["run", check], worktreePath, 300_000) });
       } catch (error) {
-        results.push({ command: `${runner} run ${check}`, passed: false, output: this.errorOutput(error) });
+        const output = this.errorOutput(error);
+        if (this.isUnavailableOptionalTool(check, output)) {
+          results.push({ command: `${runner} run ${check}`, passed: true, output: `Skipped: ${output}` });
+          continue;
+        }
+        results.push({ command: `${runner} run ${check}`, passed: false, output });
         break;
       }
     }
@@ -131,5 +136,9 @@ export class OutcomeWorkflow {
       return `${candidate.stdout ?? ""}${candidate.stderr ?? ""}`.trim() || candidate.message || "Validation command failed.";
     }
     return String(error);
+  }
+
+  private isUnavailableOptionalTool(check: string, output: string): boolean {
+    return check === "lint" && /eslint.*(?:not recognized|not found)|(?:not recognized|not found).*eslint/i.test(output);
   }
 }

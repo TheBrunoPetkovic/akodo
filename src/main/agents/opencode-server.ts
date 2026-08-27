@@ -127,17 +127,18 @@ export class OpenCodeServerAdapter {
   private async waitForReply(sessionId: string, projectPath: string, runId: string, outcomeId: string): Promise<string> {
     const deadline = Date.now() + 30 * 60_000;
     let warnedAboutReconnect = false;
+    let observedActiveSession = false;
     while (Date.now() < deadline) {
       try {
         const statuses = await this.sessionStatus(projectPath);
-        if (!statuses[sessionId] || statuses[sessionId]?.type === "idle") {
-          const messages = await this.request<OpenCodeSessionMessage[]>(`/session/${sessionId}/message`, projectPath, { method: "GET" }, true);
-          const reply = [...messages].reverse().find((message) => message.info?.role === "assistant");
-          const text = (reply?.parts ?? [])
-            .filter((part) => part.type === "text" && part.text)
-            .map((part) => part.text)
-            .join("\n");
-          return text || "OpenCode completed without text output.";
+        const status = statuses[sessionId]?.type;
+        if (status === "busy" || status === "retry") observedActiveSession = true;
+        if (status === "idle" || (observedActiveSession && !status)) {
+          return this.readFinalReply(sessionId, projectPath);
+        }
+        if (!status) {
+          const reply = await this.readFinalReply(sessionId, projectPath);
+          if (reply) return reply;
         }
       } catch (error) {
         if (!warnedAboutReconnect) {
@@ -148,6 +149,16 @@ export class OpenCodeServerAdapter {
       await new Promise((resolve) => setTimeout(resolve, 1_000));
     }
     throw new Error("OpenCode session did not finish within 30 minutes. It may still be running; check Live output and try again.");
+  }
+
+  private async readFinalReply(sessionId: string, projectPath: string): Promise<string> {
+    const messages = await this.request<OpenCodeSessionMessage[]>(`/session/${sessionId}/message`, projectPath, { method: "GET" }, true);
+    const reply = [...messages].reverse().find((message) => message.info?.role === "assistant");
+    const text = (reply?.parts ?? [])
+      .filter((part) => part.type === "text" && part.text)
+      .map((part) => part.text)
+      .join("\n");
+    return text || "";
   }
 
   private async sessionStatus(projectPath: string): Promise<OpenCodeSessionStatus> {
