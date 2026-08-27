@@ -24,7 +24,8 @@ interface OpenCodeMessageResponse {
 }
 
 export class OpenCodeServerAdapter {
-  private readonly baseUrl = "http://127.0.0.1:4098";
+  // Akodo owns this server instance so its folder restrictions do not affect a user's own OpenCode session.
+  private readonly baseUrl = "http://127.0.0.1:4099";
   private serverProcess: ChildProcessWithoutNullStreams | null = null;
   private readonly runs = new Map<string, { sessionId: string; projectPath: string }>();
 
@@ -107,7 +108,7 @@ export class OpenCodeServerAdapter {
     if (await this.isHealthy()) return;
     if (!this.serverProcess) {
       const { command, shell } = this.command();
-      this.serverProcess = spawn(command, ["serve", "--port", "4098", "--hostname", "127.0.0.1"], {
+      this.serverProcess = spawn(command, ["serve", "--port", "4099", "--hostname", "127.0.0.1"], {
         cwd: this.userHome,
         shell,
         windowsHide: true,
@@ -222,6 +223,9 @@ export class OpenCodeServerAdapter {
       USERPROFILE: this.userHome,
       APPDATA: path.join(this.userHome, "AppData", "Roaming"),
       LOCALAPPDATA: path.join(this.userHome, "AppData", "Local"),
+      // OpenCode treats anything outside the session worktree as an external directory.
+      // Denying it keeps built-in file tools scoped to the outcome worktree.
+      OPENCODE_PERMISSION: JSON.stringify({ external_directory: "deny" }),
     };
   }
 }

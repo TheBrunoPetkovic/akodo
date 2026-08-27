@@ -795,7 +795,7 @@ function buildOpenCodePrompt(outcome: Outcome, instruction: string): string {
     : "- No explicit acceptance criteria supplied";
   const constraints = outcome.constraints || "None supplied";
 
-  return `You are implementing an Akodo outcome in the current local project.\n\nOutcome: ${outcome.name}\nGoal: ${outcome.goal || outcome.name}\nConstraints:\n${constraints}\nAcceptance criteria:\n${criteria}\n\nImplementation instruction:\n${instruction}\n\nInspect the repository first, implement only what is needed, run relevant local checks, and summarize the changes and commands you ran. Do not commit, push, or deploy.`;
+  return `You are implementing an Akodo outcome in the current local project.\n\nOutcome: ${outcome.name}\nGoal: ${outcome.goal || outcome.name}\nConstraints:\n${constraints}\nAcceptance criteria:\n${criteria}\n\nImplementation instruction:\n${instruction}\n\nScope boundary: work only inside the current outcome worktree. Do not read, modify, create, or delete files outside this repository folder. Do not navigate to parent folders, the user home, or other projects.\n\nInspect the repository first, implement only what is needed, run relevant local checks, and summarize the changes and commands you ran. Do not commit, push, or deploy.`;
 }
 
 export default App;
