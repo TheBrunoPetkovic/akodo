@@ -243,19 +243,6 @@ function App() {
     saveOutcomes(updated);
   };
 
-  const startOutcome = (index: number) => {
-    const outcome = outcomes[index];
-    if (!outcome.projectPath) {
-      setOutcomes((prev) => prev.map((item, i) => (
-        i === index
-          ? { ...item, status: "Needs input", events: [...item.events, makeEvent("project.required", "Choose a project for this outcome before starting it")] }
-          : item
-      )));
-      return;
-    }
-    void runImplementation(outcome.id, "Implement the outcome completely. Work through every acceptance criterion.");
-  };
-
   const chooseProjectForNewOutcome = async () => {
     const projectPath = await window.api.selectProject();
     if (projectPath) setNewOutcomeProjectPath(projectPath);
