@@ -63,18 +63,6 @@ function saveOutcomes(outcomes: Outcome[]) {
   localStorage.setItem("akodo-outcomes", JSON.stringify(outcomes));
 }
 
-const STATUS_COLORS: Record<OutcomeStatus, string> = {
-  "Draft": "text-ctp-overlay0",
-  "Planning": "text-ctp-yellow",
-  "Working": "text-ctp-blue",
-  "Validating": "text-ctp-mauve",
-  "Fixing": "text-ctp-peach",
-  "Needs input": "text-ctp-red",
-  "Ready to review": "text-ctp-green",
-  "Applied": "text-ctp-teal",
-  "Failed": "text-ctp-red",
-};
-
 const STATUS_DOT: Record<OutcomeStatus, string> = {
   "Draft": "bg-ctp-overlay0",
   "Planning": "bg-ctp-yellow",
@@ -88,7 +76,7 @@ const STATUS_DOT: Record<OutcomeStatus, string> = {
 };
 
 function App() {
-  type RightSidebarView = "timeline" | "review" | "spec";
+  type RightSidebarView = "conversation" | "timeline" | "review" | "spec";
   const [panelWidth, setPanelWidth] = useState(38);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [rightSidebar, setRightSidebar] = useState<RightSidebarView | null>(null);
@@ -541,17 +529,11 @@ function App() {
                   <div className="flex items-center justify-between gap-3">
                     <h2 className="text-lg font-medium text-ctp-text truncate">{currentOutcome.name}</h2>
                     <div className="flex shrink-0 items-center gap-1">
-                      <Tooltip text="Outcome spec"><button onClick={() => toggleRightSidebar("spec")} className={`w-7 h-7 rounded flex items-center justify-center transition-colors ${rightSidebar === "spec" ? "bg-ctp-mauve text-ctp-crust" : "text-ctp-overlay0 hover:text-ctp-text hover:bg-ctp-surface0"}`}><svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6M9 8h.01M5 4h14a2 2 0 012 2v12a2 2 0 01-2 2H5a2 2 0 01-2-2V6a2 2 0 012-2z" /></svg></button></Tooltip>
-                      <Tooltip text="Review"><button onClick={() => toggleRightSidebar("review")} className={`w-7 h-7 rounded flex items-center justify-center transition-colors ${rightSidebar === "review" ? "bg-ctp-mauve text-ctp-crust" : "text-ctp-overlay0 hover:text-ctp-text hover:bg-ctp-surface0"}`}><svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m5-2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg></button></Tooltip>
-                      <Tooltip text="Timeline"><button onClick={() => toggleRightSidebar("timeline")} className={`w-7 h-7 rounded flex items-center justify-center transition-colors ${rightSidebar === "timeline" ? "bg-ctp-mauve text-ctp-crust" : "text-ctp-overlay0 hover:text-ctp-text hover:bg-ctp-surface0"}`}><svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6l4 2m5-2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg></button></Tooltip>
+                      <Tooltip text="Live output"><button aria-label="Live output" onClick={() => toggleRightSidebar("conversation")} className={`inline-flex h-8 w-8 items-center justify-center rounded-md transition-colors ${rightSidebar === "conversation" ? "bg-ctp-mauve text-ctp-crust" : "text-ctp-overlay0 hover:text-ctp-text hover:bg-ctp-surface0"}`}><svg className="h-4 w-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path strokeLinecap="round" strokeLinejoin="round" d="m5 7 4 5-4 5m6 0h8M4 4h16v16H4z" /></svg></button></Tooltip>
+                      <Tooltip text="Outcome spec"><button aria-label="Outcome spec" onClick={() => toggleRightSidebar("spec")} className={`inline-flex h-8 w-8 items-center justify-center rounded-md transition-colors ${rightSidebar === "spec" ? "bg-ctp-mauve text-ctp-crust" : "text-ctp-overlay0 hover:text-ctp-text hover:bg-ctp-surface0"}`}><svg className="h-4 w-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6M9 8h.01M5 4h14a2 2 0 012 2v12a2 2 0 01-2 2H5a2 2 0 01-2-2V6a2 2 0 01-2-2z" /></svg></button></Tooltip>
+                      <Tooltip text="Review"><button aria-label="Review" onClick={() => toggleRightSidebar("review")} className={`inline-flex h-8 w-8 items-center justify-center rounded-md transition-colors ${rightSidebar === "review" ? "bg-ctp-mauve text-ctp-crust" : "text-ctp-overlay0 hover:text-ctp-text hover:bg-ctp-surface0"}`}><svg className="h-4 w-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m5-2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg></button></Tooltip>
+                      <Tooltip text="Timeline"><button aria-label="Timeline" onClick={() => toggleRightSidebar("timeline")} className={`inline-flex h-8 w-8 items-center justify-center rounded-md transition-colors ${rightSidebar === "timeline" ? "bg-ctp-mauve text-ctp-crust" : "text-ctp-overlay0 hover:text-ctp-text hover:bg-ctp-surface0"}`}><svg className="h-4 w-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6l4 2m5-2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg></button></Tooltip>
                     </div>
-                  </div>
-                  <div className="flex items-center gap-2 mt-1.5">
-                    {currentOutcome.status !== "Needs input" && (
-                      <span className={`text-xs font-medium uppercase tracking-wider ${STATUS_COLORS[currentOutcome.status]}`}>
-                        {currentOutcome.status}
-                      </span>
-                    )}
                   </div>
                 </div>
 
@@ -663,42 +645,6 @@ function App() {
                   </div>
                 )}
 
-                {currentOutcome.question && (
-                  <div className="px-4 py-3 border-b border-ctp-surface0 space-y-3 bg-ctp-yellow/5">
-                    <div className="text-[11px] font-medium text-ctp-yellow uppercase tracking-wider">OpenCode needs your decision</div>
-                    {currentOutcome.question.questions.map((question, questionIndex) => {
-                      const selected = questionAnswers[currentOutcome.id]?.[questionIndex] ?? [];
-                      return (
-                        <div key={`${currentOutcome.question!.requestId}-${questionIndex}`} className="space-y-2">
-                          <div className="text-sm text-ctp-text">{question.question}</div>
-                          <div className="space-y-1.5">
-                            {question.options.map((option) => {
-                              const active = selected.includes(option.label);
-                              return (
-                                <button
-                                  key={option.label}
-                                  onClick={() => toggleQuestionAnswer(currentOutcome, questionIndex, option.label, Boolean(question.multiple))}
-                                  className={`block w-full text-left rounded border px-2.5 py-2 text-xs transition-colors ${active ? "border-ctp-mauve bg-ctp-mauve/15 text-ctp-text" : "border-ctp-surface0 bg-ctp-base text-ctp-subtext1 hover:bg-ctp-surface0"}`}
-                                >
-                                  <div className="font-medium">{option.label}</div>
-                                  {option.description && <div className="mt-0.5 text-ctp-overlay0">{option.description}</div>}
-                                </button>
-                              );
-                            })}
-                          </div>
-                        </div>
-                      );
-                    })}
-                    <button
-                      onClick={() => void submitQuestionAnswers(currentOutcome)}
-                      disabled={(questionAnswers[currentOutcome.id] ?? []).length !== currentOutcome.question.questions.length || (questionAnswers[currentOutcome.id] ?? []).some((answer) => answer.length === 0)}
-                      className="px-3 py-1.5 rounded bg-ctp-mauve text-ctp-crust text-xs font-medium disabled:opacity-40 hover:opacity-90"
-                    >
-                      Continue agent
-                    </button>
-                  </div>
-                )}
-
                 {currentOutcome.events.length > 0 && (
                   <div className="hidden px-4 py-3 border-b border-ctp-surface0">
                     <div className="text-[11px] font-medium text-ctp-overlay0 uppercase tracking-wider mb-1.5">Timeline</div>
@@ -717,14 +663,6 @@ function App() {
 
                 <div className="px-4 py-3">
                   <div className="text-[11px] font-medium text-ctp-overlay0 uppercase tracking-wider mb-1.5">Conversation</div>
-                  {currentLiveOutput && (
-                    <div className="mb-4">
-                      <div className="text-[11px] font-medium text-ctp-blue uppercase tracking-wider mb-1.5 animate-pulse">Live OpenCode output</div>
-                      <pre className="max-h-64 overflow-y-auto whitespace-pre-wrap break-words rounded-lg bg-ctp-base border border-ctp-surface0 p-3 text-xs leading-relaxed text-ctp-subtext1 font-mono">
-                        {currentLiveOutput}
-                      </pre>
-                    </div>
-                  )}
                   {currentMessages.length === 0 && currentQueue.length === 0 ? (
                     <div className="text-sm text-ctp-overlay0">Start working on this task.</div>
                   ) : (
@@ -759,6 +697,44 @@ function App() {
                   )}
                 </div>
               </div>
+
+              {currentOutcome.question && (
+                <div className="max-h-[42vh] overflow-y-auto border-t border-ctp-yellow/30 bg-ctp-yellow/5 px-4 py-3 select-text">
+                  <div className="mb-3 text-[11px] font-medium uppercase tracking-wider text-ctp-yellow">OpenCode needs your decision</div>
+                  <div className="space-y-3">
+                    {currentOutcome.question.questions.map((question, questionIndex) => {
+                      const selected = questionAnswers[currentOutcome.id]?.[questionIndex] ?? [];
+                      return (
+                        <div key={`${currentOutcome.question!.requestId}-${questionIndex}`} className="space-y-2">
+                          <div className="text-sm text-ctp-text">{question.question}</div>
+                          <div className="space-y-1.5">
+                            {question.options.map((option) => {
+                              const active = selected.includes(option.label);
+                              return (
+                                <button
+                                  key={option.label}
+                                  onClick={() => toggleQuestionAnswer(currentOutcome, questionIndex, option.label, Boolean(question.multiple))}
+                                  className={`block w-full rounded-md border px-3 py-2 text-left text-xs transition-colors ${active ? "border-ctp-mauve bg-ctp-mauve/15 text-ctp-text" : "border-ctp-surface0 bg-ctp-base text-ctp-subtext1 hover:bg-ctp-surface0"}`}
+                                >
+                                  <div className="font-medium">{option.label}</div>
+                                  {option.description && <div className="mt-0.5 text-ctp-overlay0">{option.description}</div>}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      );
+                    })}
+                    <button
+                      onClick={() => void submitQuestionAnswers(currentOutcome)}
+                      disabled={(questionAnswers[currentOutcome.id] ?? []).length !== currentOutcome.question.questions.length || (questionAnswers[currentOutcome.id] ?? []).some((answer) => answer.length === 0)}
+                      className="inline-flex h-8 items-center justify-center rounded-md bg-ctp-mauve px-3 text-xs font-medium text-ctp-crust transition-opacity hover:opacity-90 disabled:opacity-40"
+                    >
+                      Continue agent
+                    </button>
+                  </div>
+                </div>
+              )}
 
               <div className="p-3 border-t border-ctp-surface0">
                 <div className="relative">
@@ -862,10 +838,17 @@ function App() {
         {currentOutcome && rightSidebar && (
           <aside className="w-[330px] shrink-0 rounded-xl border border-ctp-surface0 bg-ctp-mantle mr-[5px] overflow-hidden flex flex-col">
             <div className="flex items-center justify-between px-3 py-3 border-b border-ctp-surface0">
-              <span className="text-sm font-medium text-ctp-text">{rightSidebar === "spec" ? "Outcome spec" : rightSidebar === "review" ? "Review" : "Timeline"}</span>
-              <button onClick={() => setRightSidebar(null)} className="w-6 h-6 rounded text-ctp-overlay0 hover:text-ctp-text hover:bg-ctp-surface0">×</button>
+              <span className="text-sm font-medium text-ctp-text">{rightSidebar === "conversation" ? "Live output" : rightSidebar === "spec" ? "Outcome spec" : rightSidebar === "review" ? "Review" : "Timeline"}</span>
+              <button aria-label="Close sidebar" onClick={() => setRightSidebar(null)} className="inline-flex h-8 w-8 items-center justify-center rounded-md text-ctp-overlay0 transition-colors hover:bg-ctp-surface0 hover:text-ctp-text">×</button>
             </div>
             <div className="flex-1 overflow-y-auto select-text p-4">
+              {rightSidebar === "conversation" && (
+                currentLiveOutput ? (
+                  <pre className="whitespace-pre-wrap break-words rounded-lg border border-ctp-surface0 bg-ctp-base p-3 text-xs leading-relaxed text-ctp-subtext1 font-mono">{currentLiveOutput}</pre>
+                ) : (
+                  <div className="text-sm text-ctp-overlay0">Live output will appear when OpenCode starts working.</div>
+                )
+              )}
               {rightSidebar === "spec" && <div className="space-y-5">
                 <div><div className="text-[11px] uppercase tracking-wider text-ctp-overlay0 mb-1">Project</div><div className="text-xs text-ctp-subtext1 break-words">{currentOutcome.projectPath || "No project selected"}</div><button onClick={() => void chooseProjectForOutcome(currentOutcome.id)} className="mt-2 text-xs px-2 py-1 rounded bg-ctp-surface0 hover:bg-ctp-surface1">{currentOutcome.projectPath ? "Change project" : "Choose project"}</button></div>
                 <div><div className="text-[11px] uppercase tracking-wider text-ctp-overlay0 mb-1">Goal</div><div className="text-sm whitespace-pre-wrap">{currentOutcome.goal || currentOutcome.name}</div></div>
