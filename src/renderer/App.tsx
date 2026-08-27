@@ -698,46 +698,48 @@ function App() {
                 </div>
               </div>
 
-              {currentOutcome.question && (
-                <div className="max-h-[42vh] overflow-y-auto border-t border-ctp-yellow/30 bg-ctp-yellow/5 px-4 py-3 select-text">
-                  <div className="mb-3 text-[11px] font-medium uppercase tracking-wider text-ctp-yellow">OpenCode needs your decision</div>
-                  <div className="space-y-3">
-                    {currentOutcome.question.questions.map((question, questionIndex) => {
-                      const selected = questionAnswers[currentOutcome.id]?.[questionIndex] ?? [];
-                      return (
-                        <div key={`${currentOutcome.question!.requestId}-${questionIndex}`} className="space-y-2">
-                          <div className="text-sm text-ctp-text">{question.question}</div>
-                          <div className="space-y-1.5">
-                            {question.options.map((option) => {
-                              const active = selected.includes(option.label);
-                              return (
-                                <button
-                                  key={option.label}
-                                  onClick={() => toggleQuestionAnswer(currentOutcome, questionIndex, option.label, Boolean(question.multiple))}
-                                  className={`block w-full rounded-md border px-3 py-2 text-left text-xs transition-colors ${active ? "border-ctp-mauve bg-ctp-mauve/15 text-ctp-text" : "border-ctp-surface0 bg-ctp-base text-ctp-subtext1 hover:bg-ctp-surface0"}`}
-                                >
-                                  <div className="font-medium">{option.label}</div>
-                                  {option.description && <div className="mt-0.5 text-ctp-overlay0">{option.description}</div>}
-                                </button>
-                              );
-                            })}
-                          </div>
-                        </div>
-                      );
-                    })}
-                    <button
-                      onClick={() => void submitQuestionAnswers(currentOutcome)}
-                      disabled={(questionAnswers[currentOutcome.id] ?? []).length !== currentOutcome.question.questions.length || (questionAnswers[currentOutcome.id] ?? []).some((answer) => answer.length === 0)}
-                      className="inline-flex h-8 items-center justify-center rounded-md bg-ctp-mauve px-3 text-xs font-medium text-ctp-crust transition-opacity hover:opacity-90 disabled:opacity-40"
-                    >
-                      Continue agent
-                    </button>
-                  </div>
-                </div>
-              )}
-
               <div className="p-3 border-t border-ctp-surface0">
                 <div className="relative">
+                  {currentOutcome.question && (
+                    <div className="absolute bottom-full right-0 z-20 mb-3 w-[28rem] max-w-[calc(100vw-2rem)] max-h-[42vh] overflow-y-auto rounded-2xl border border-ctp-yellow/40 bg-ctp-mantle/95 p-4 shadow-2xl shadow-ctp-crust/50 backdrop-blur select-text">
+                      <div className="mb-3 flex items-center gap-2 text-[11px] font-medium uppercase tracking-wider text-ctp-yellow">
+                        <span className="h-2 w-2 rounded-full bg-ctp-yellow animate-pulse" />
+                        OpenCode needs your decision
+                      </div>
+                      <div className="space-y-3">
+                        {currentOutcome.question.questions.map((question, questionIndex) => {
+                          const selected = questionAnswers[currentOutcome.id]?.[questionIndex] ?? [];
+                          return (
+                            <div key={`${currentOutcome.question!.requestId}-${questionIndex}`} className="space-y-2">
+                              <div className="text-sm text-ctp-text">{question.question}</div>
+                              <div className="space-y-1.5">
+                                {question.options.map((option) => {
+                                  const active = selected.includes(option.label);
+                                  return (
+                                    <button
+                                      key={option.label}
+                                      onClick={() => toggleQuestionAnswer(currentOutcome, questionIndex, option.label, Boolean(question.multiple))}
+                                      className={`block w-full rounded-xl border px-3 py-2 text-left text-xs transition-colors ${active ? "border-ctp-mauve bg-ctp-mauve/15 text-ctp-text" : "border-ctp-surface0 bg-ctp-base text-ctp-subtext1 hover:bg-ctp-surface0"}`}
+                                    >
+                                      <div className="font-medium">{option.label}</div>
+                                      {option.description && <div className="mt-0.5 text-ctp-overlay0">{option.description}</div>}
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          );
+                        })}
+                        <button
+                          onClick={() => void submitQuestionAnswers(currentOutcome)}
+                          disabled={(questionAnswers[currentOutcome.id] ?? []).length !== currentOutcome.question.questions.length || (questionAnswers[currentOutcome.id] ?? []).some((answer) => answer.length === 0)}
+                          className="inline-flex h-8 items-center justify-center rounded-xl bg-ctp-mauve px-3 text-xs font-medium text-ctp-crust transition-opacity hover:opacity-90 disabled:opacity-40"
+                        >
+                          Continue agent
+                        </button>
+                      </div>
+                    </div>
+                  )}
                   <input
                     type="text"
                     value={input}
