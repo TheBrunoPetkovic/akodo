@@ -45,8 +45,8 @@ export class VisualValidator {
         await mkdir(artifactDir, { recursive: true });
         const desktopPath = path.join(artifactDir, "desktop.png");
         const mobilePath = path.join(artifactDir, "mobile.png");
-        await desktop.screenshot({ path: desktopPath, fullPage: true });
-        await mobile.screenshot({ path: mobilePath, fullPage: true });
+        await this.captureScreenshot(desktop, desktopPath);
+        await this.captureScreenshot(mobile, mobilePath);
         const screenshots = await Promise.all([
           this.toDataUrl("Desktop", desktopPath),
           this.toDataUrl("Mobile", mobilePath),
@@ -70,6 +70,21 @@ export class VisualValidator {
 
   private async toDataUrl(label: string, imagePath: string) {
     return { label, dataUrl: `data:image/png;base64,${(await readFile(imagePath)).toString("base64")}` };
+  }
+
+  private async captureScreenshot(page: import("playwright").Page, imagePath: string): Promise<void> {
+    const attempts = 2;
+    let lastError: unknown;
+    for (let attempt = 1; attempt <= attempts; attempt += 1) {
+      try {
+        await page.screenshot({ path: imagePath, fullPage: true, timeout: 30_000 });
+        return;
+      } catch (error) {
+        lastError = error;
+        if (attempt < attempts) await new Promise((resolve) => setTimeout(resolve, 750));
+      }
+    }
+    throw lastError;
   }
 
   private async installPreviewBridge(page: import("playwright").Page): Promise<void> {
