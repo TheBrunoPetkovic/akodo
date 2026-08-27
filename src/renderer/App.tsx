@@ -560,9 +560,11 @@ function App() {
                     </div>
                   </div>
                   <div className="flex items-center gap-2 mt-1.5">
-                    <span className={`text-xs font-medium uppercase tracking-wider ${STATUS_COLORS[currentOutcome.status]}`}>
-                      {currentOutcome.status}
-                    </span>
+                    {currentOutcome.status !== "Needs input" && (
+                      <span className={`text-xs font-medium uppercase tracking-wider ${STATUS_COLORS[currentOutcome.status]}`}>
+                        {currentOutcome.status}
+                      </span>
+                    )}
                     {(currentOutcome.status === "Draft" || currentOutcome.status === "Needs input" || currentOutcome.status === "Failed") && (
                       <button onClick={() => startOutcome(selectedIndex!)} className="text-xs px-2 py-0.5 rounded bg-ctp-mauve text-ctp-crust font-medium hover:opacity-80">
                         {currentOutcome.prepared ? "Retry" : "Start"}
