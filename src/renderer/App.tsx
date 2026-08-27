@@ -682,7 +682,7 @@ function App() {
           </div>
           <div
             onMouseDown={onMouseDown}
-            className="absolute top-0 right-0 w-1 h-full cursor-col-resize hover:bg-ctp-surface0 active:bg-ctp-mauve transition-colors"
+            className="absolute top-0 right-[-4.5px] w-1 h-full cursor-col-resize hover:bg-ctp-surface0 active:bg-ctp-mauve transition-colors"
           />
         </div>
 
