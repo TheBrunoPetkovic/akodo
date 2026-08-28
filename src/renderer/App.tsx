@@ -83,7 +83,7 @@ const STATUS_DOT: Record<OutcomeStatus, string> = {
 
 function App() {
   type RightSidebarView = "conversation" | "timeline" | "review" | "spec";
-  const [panelWidth, setPanelWidth] = useState(() => ((250 + 50) / window.innerWidth) * 100);
+  const [panelWidth, setPanelWidth] = useState(250);
   const [rightWidth, setRightWidth] = useState(330);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [rightSidebar, setRightSidebar] = useState<RightSidebarView | null>(null);
@@ -182,9 +182,8 @@ function App() {
         const newWidth = startWidth.current - dx;
         setRightWidth(Math.min(Math.max(newWidth, 250), window.innerWidth * 0.85));
       } else {
-        const newWidth = startWidth.current + (dx / window.innerWidth) * 100;
-        const minPercent = (250 / window.innerWidth) * 100;
-        setPanelWidth(Math.min(Math.max(newWidth, minPercent), 85));
+        const newWidth = startWidth.current + dx;
+        setPanelWidth(Math.min(Math.max(newWidth, 250), window.innerWidth * 0.85));
       }
     };
 
@@ -661,7 +660,7 @@ function App() {
             </button>
           </Tooltip>
         </div>
-        <div className="flex flex-col relative ml-[50px]" style={{ width: `calc(${panelWidth}% - 50px)` }}>
+        <div className="flex flex-col relative ml-[50px]" style={{ width: `${panelWidth}px` }}>
           <div className="flex-1 rounded-xl border border-ctp-surface0 bg-ctp-mantle relative overflow-hidden">
             <div className="flex items-center justify-between px-3 pt-2.5 pb-2 border-b border-ctp-surface0">
               <span className="text-sm font-medium text-ctp-overlay0">Outcomes</span>

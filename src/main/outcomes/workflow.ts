@@ -76,7 +76,8 @@ export class OutcomeWorkflow {
     const summary = await this.git(worktreePath, ["diff", "--stat"]);
     const diff = await this.git(worktreePath, ["diff", "--", "."], 30_000);
     const names = await this.git(worktreePath, ["status", "--short"]);
-    return { summary: summary || "No tracked file changes.", diff: diff || "No tracked file diff.", changedFiles: names.split("\n").filter(Boolean) };
+    const changedFiles = names.split("\n").filter((name) => name && !this.isManagedDependencyPath(name));
+    return { summary: summary || "No tracked file changes.", diff: diff || "No tracked file diff.", changedFiles };
   }
 
   async approve(prepared: PreparedOutcome, outcomeName: string): Promise<void> {
@@ -85,7 +86,9 @@ export class OutcomeWorkflow {
     if (sourceStatus) throw new Error("Your selected project's current branch has uncommitted changes. Commit or stash them before applying this outcome.");
     const review = await this.review(prepared.worktreePath);
     if (review.changedFiles.length === 0) throw new Error("There are no changes to apply.");
-    await this.git(prepared.worktreePath, ["add", "-A"]);
+    // Worktrees share the source project's dependencies through a local symlink.
+    // That runtime-only link must never become part of an outcome commit.
+    await this.git(prepared.worktreePath, ["add", "-A", "--", ".", ":(exclude)node_modules"]);
     await this.git(prepared.worktreePath, ["commit", "-m", `akodo: ${outcomeName}`], 60_000);
     await this.git(prepared.sourcePath, ["cherry-pick", await this.git(prepared.worktreePath, ["rev-parse", "HEAD"])], 60_000);
   }
@@ -128,6 +131,11 @@ export class OutcomeWorkflow {
     const worktreeDependencies = path.join(worktreePath, "node_modules");
     if (!existsSync(sourceDependencies) || existsSync(worktreeDependencies)) return;
     await symlink(sourceDependencies, worktreeDependencies, "junction");
+  }
+
+  private isManagedDependencyPath(statusLine: string): boolean {
+    const filePath = statusLine.slice(3);
+    return filePath === "node_modules" || filePath.startsWith("node_modules/");
   }
 
   private errorOutput(error: unknown): string {
