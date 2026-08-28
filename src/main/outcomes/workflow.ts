@@ -24,7 +24,8 @@ export class OutcomeWorkflow {
       throw new Error("The selected project has uncommitted changes. Commit or stash them first so this outcome can start from a reproducible Git worktree.");
     }
     const worktreePath = path.join(this.worktreesRoot, outcomeId);
-    const branch = `akodo/${outcomeId.replace(/[^a-zA-Z0-9]/g, "").slice(0, 12)}`;
+    // Keep enough of the outcome ID to prevent collisions between similarly named outcomes.
+    const branch = `akodo/${outcomeId.replace(/[^a-zA-Z0-9]/g, "").slice(0, 48)}`;
     if (existsSync(worktreePath)) {
       const activeBranch = await this.git(worktreePath, ["branch", "--show-current"]);
       return { sourcePath, worktreePath, branch: activeBranch || branch };
