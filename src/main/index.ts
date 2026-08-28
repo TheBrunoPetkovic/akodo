@@ -92,6 +92,10 @@ ipcMain.handle("opencode-status", async () => ({
   available: await openCode.isAvailable(),
 }));
 
+ipcMain.handle("opencode-run-active", async (_event, projectPath: string) => {
+  return openCode.hasActiveSession(projectPath);
+});
+
 ipcMain.handle("opencode-install", async () => {
   await openCode.install();
   const available = await openCode.isAvailable();

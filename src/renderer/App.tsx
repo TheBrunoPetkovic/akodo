@@ -139,6 +139,25 @@ function App() {
   }, [outcomes]);
 
   useEffect(() => {
+    const interrupted = outcomes.filter((outcome) => ["Planning", "Working", "Validating"].includes(outcome.status));
+    if (interrupted.length === 0) return;
+    void Promise.all(interrupted.map(async (outcome) => ({
+      id: outcome.id,
+      active: await window.api.hasActiveOpenCodeRun(outcome.prepared?.worktreePath || outcome.projectPath).catch(() => false),
+    }))).then((checks) => {
+      const inactive = new Set(checks.filter((check) => !check.active).map((check) => check.id));
+      if (inactive.size === 0) return;
+      setOutcomes((previous) => previous.map((outcome) => inactive.has(outcome.id) ? {
+        ...outcome,
+        status: "Needs input",
+        events: [...outcome.events, makeEvent("outcome.recovered", "Previous agent run was interrupted. Review the existing changes, then retry or start a new outcome.")],
+      } : outcome));
+    });
+    // Recovery only runs once when Akodo restores persisted outcomes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
     localStorage.removeItem("akodo-api-key");
     localStorage.removeItem("akodo-default-model");
   }, []);

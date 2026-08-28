@@ -68,6 +68,12 @@ export class OpenCodeServerAdapter {
     }
   }
 
+  async hasActiveSession(projectPath: string): Promise<boolean> {
+    if (!(await this.isAvailable())) return false;
+    const statuses = await this.sessionStatus(projectPath).catch((): OpenCodeSessionStatus => ({}));
+    return Object.values(statuses).some((status) => status.type === "busy" || status.type === "retry");
+  }
+
   async runForReply(input: OpenCodeRunInput): Promise<string> {
     const runId = crypto.randomUUID();
     try {

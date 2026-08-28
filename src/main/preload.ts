@@ -23,6 +23,7 @@ contextBridge.exposeInMainWorld("api", {
   maximize: () => ipcRenderer.send("window-maximize"),
   close: () => ipcRenderer.send("window-close"),
   getOpenCodeStatus: () => ipcRenderer.invoke("opencode-status"),
+  hasActiveOpenCodeRun: (projectPath: string): Promise<boolean> => ipcRenderer.invoke("opencode-run-active", projectPath),
   installOpenCode: () => ipcRenderer.invoke("opencode-install"),
   selectProject: () => ipcRenderer.invoke("select-project"),
   runOpenCode: (input: { outcomeId: string; projectPath: string; prompt: string }) => ipcRenderer.invoke("opencode-run", input),
