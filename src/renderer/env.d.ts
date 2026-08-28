@@ -6,6 +6,7 @@ interface Window {
       maximize: () => void;
       close: () => void;
       getOpenCodeStatus: () => Promise<{ available: boolean }>;
+      installOpenCode: () => Promise<{ available: boolean }>;
       selectProject: () => Promise<string | null>;
       runOpenCode: (input: { outcomeId: string; projectPath: string; prompt: string }) => Promise<string>;
     cancelOpenCode: (runId: string) => Promise<boolean>;

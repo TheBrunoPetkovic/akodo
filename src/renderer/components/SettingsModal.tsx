@@ -6,6 +6,8 @@ interface SettingsModalProps {
 
 export function SettingsModal({ onClose }: SettingsModalProps) {
   const [available, setAvailable] = useState<boolean | null>(null);
+  const [installing, setInstalling] = useState(false);
+  const [installError, setInstallError] = useState<string | null>(null);
 
   const refreshStatus = async () => {
     const status = await window.api.getOpenCodeStatus();
@@ -13,6 +15,19 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
   };
 
   useEffect(() => { void refreshStatus(); }, []);
+
+  const installOpenCode = async () => {
+    setInstalling(true);
+    setInstallError(null);
+    try {
+      const status = await window.api.installOpenCode();
+      setAvailable(status.available);
+    } catch (error) {
+      setInstallError(error instanceof Error ? error.message : "OpenCode could not be installed.");
+    } finally {
+      setInstalling(false);
+    }
+  };
 
   return (
     <div
@@ -32,6 +47,20 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
           <p className="text-[11px] text-ctp-overlay0 mt-1.5">
             {available === null ? "Checking OpenCode CLI..." : available ? "OpenCode CLI is ready." : "OpenCode CLI is not installed or not on PATH."}
           </p>
+          {!available && (
+            <button
+              type="button"
+              onClick={() => void installOpenCode()}
+              disabled={installing || available === null}
+              className="mt-3 rounded-md bg-ctp-blue px-3 py-1.5 text-xs font-medium text-ctp-base transition-colors hover:bg-ctp-sapphire disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {installing ? "Installing OpenCode…" : "Install OpenCode locally"}
+            </button>
+          )}
+          {installError && <p className="mt-2 whitespace-pre-wrap text-[11px] text-ctp-red">{installError}</p>}
+          {!available && !installError && (
+            <p className="mt-2 text-[11px] text-ctp-overlay0">Installs a private Akodo runtime; your global npm and PATH stay unchanged.</p>
+          )}
         </div>
 
       </div>

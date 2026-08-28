@@ -8,7 +8,8 @@ let mainWindow: BrowserWindow | null = null;
 const openCode = new OpenCodeServerAdapter(
   (event: OpenCodeEvent) => mainWindow?.webContents.send("opencode:event", event),
   app.getPath("home"),
-  path.join(app.getAppPath(), "node_modules")
+  path.join(app.getAppPath(), "node_modules"),
+  path.join(app.getPath("userData"), "opencode-runtime")
 );
 const workflow = new OutcomeWorkflow(path.join(app.getPath("userData"), "worktrees"));
 const visualValidator = new VisualValidator(path.join(app.getPath("userData"), "artifacts"));
@@ -90,6 +91,13 @@ ipcMain.on("window-close", () => {
 ipcMain.handle("opencode-status", async () => ({
   available: await openCode.isAvailable(),
 }));
+
+ipcMain.handle("opencode-install", async () => {
+  await openCode.install();
+  const available = await openCode.isAvailable();
+  if (!available) throw new Error("OpenCode installed, but its local server could not be started.");
+  return { available };
+});
 
 ipcMain.handle("select-project", async () => {
   const result = await dialog.showOpenDialog(mainWindow!, {

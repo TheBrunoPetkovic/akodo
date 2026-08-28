@@ -47,10 +47,19 @@ export class OpenCodeServerAdapter {
   constructor(
     private readonly emit: (event: OpenCodeEvent) => void,
     private readonly userHome: string,
-    private readonly browserRuntimePath: string
+    private readonly browserRuntimePath: string,
+    private readonly localRuntimePath: string
   ) {}
 
+  /** Installs OpenCode in Akodo's app data, leaving the user's global npm setup untouched. */
+  async install(): Promise<void> {
+    const npmCommand = process.platform === "win32" ? "npm.cmd" : "npm";
+    const { exitCode, output } = await this.runCommand(npmCommand, ["install", "--prefix", this.localRuntimePath, "opencode-ai"]);
+    if (exitCode !== 0) throw new Error(`OpenCode installation failed.${output ? `\n${output}` : ""}`);
+  }
+
   async isAvailable(): Promise<boolean> {
+    if (!this.hasCommand()) return false;
     try {
       await this.ensureServer();
       return true;
@@ -174,13 +183,20 @@ export class OpenCodeServerAdapter {
     if (await this.isHealthy()) return;
     if (!this.serverProcess) {
       const { command, shell } = this.command();
-      this.serverProcess = spawn(command, ["serve", "--port", "4099", "--hostname", "127.0.0.1"], {
+      const server = spawn(command, ["serve", "--port", "4099", "--hostname", "127.0.0.1"], {
         cwd: this.userHome,
         shell,
         windowsHide: true,
         env: this.environment(),
       });
-      this.serverProcess.once("close", () => { this.serverProcess = null; });
+      this.serverProcess = server;
+      // A stale PATH entry or a removed executable must not crash the Electron main process.
+      server.once("error", () => {
+        if (this.serverProcess === server) this.serverProcess = null;
+      });
+      server.once("close", () => {
+        if (this.serverProcess === server) this.serverProcess = null;
+      });
     }
 
     const deadline = Date.now() + 10_000;
@@ -294,9 +310,49 @@ export class OpenCodeServerAdapter {
   }
 
   private command(): { command: string; shell: boolean } {
+    const localBinary = path.join(
+      this.localRuntimePath,
+      "node_modules",
+      ".bin",
+      process.platform === "win32" ? "opencode.cmd" : "opencode"
+    );
+    if (existsSync(localBinary)) return { command: localBinary, shell: process.platform === "win32" };
     const globalBinary = path.join(this.userHome, "AppData", "Roaming", "npm", "node_modules", "opencode-ai", "bin", "opencode.exe");
     if (process.platform === "win32" && existsSync(globalBinary)) return { command: globalBinary, shell: false };
     return { command: "opencode", shell: process.platform === "win32" };
+  }
+
+  private hasCommand(): boolean {
+    const localBinary = path.join(
+      this.localRuntimePath,
+      "node_modules",
+      ".bin",
+      process.platform === "win32" ? "opencode.cmd" : "opencode"
+    );
+    if (existsSync(localBinary)) return true;
+
+    const globalBinary = path.join(this.userHome, "AppData", "Roaming", "npm", "node_modules", "opencode-ai", "bin", "opencode.exe");
+    if (process.platform === "win32" && existsSync(globalBinary)) return true;
+
+    const pathEntries = (process.env.PATH ?? "").split(path.delimiter).filter(Boolean);
+    const names = process.platform === "win32" ? ["opencode.exe", "opencode.cmd", "opencode.bat"] : ["opencode"];
+    return pathEntries.some((entry) => names.some((name) => existsSync(path.join(entry, name))));
+  }
+
+  private runCommand(command: string, args: string[]): Promise<{ exitCode: number | null; output: string }> {
+    return new Promise((resolve, reject) => {
+      const child = spawn(command, args, {
+        cwd: this.userHome,
+        shell: process.platform === "win32",
+        windowsHide: true,
+        env: this.environment(),
+      });
+      let output = "";
+      child.stdout.on("data", (chunk: Buffer) => { output += chunk.toString(); });
+      child.stderr.on("data", (chunk: Buffer) => { output += chunk.toString(); });
+      child.on("error", (error) => reject(new Error(`Could not start npm to install OpenCode: ${error.message}`)));
+      child.on("close", (exitCode) => resolve({ exitCode, output: output.trim() }));
+    });
   }
 
   private environment(): NodeJS.ProcessEnv {
