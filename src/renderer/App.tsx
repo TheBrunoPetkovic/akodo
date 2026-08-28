@@ -15,6 +15,7 @@ type OutcomeStatus =
   | "Specifying"
   | "Ready to implement"
   | "Needs input"
+  | "Ready to validate"
   | "Ready to review"
   | "Applied"
   | "Failed";
@@ -39,7 +40,8 @@ interface Outcome {
   prepared?: { sourcePath: string; worktreePath: string; branch: string };
   validation?: { command: string; passed: boolean; output: string }[];
   review?: { summary: string; diff: string; changedFiles: string[] };
-  visualValidation?: { supported: boolean; passed: boolean; message: string; screenshots: Array<{ label: string; dataUrl: string }>; consoleErrors: string[] };
+  validationSpec?: { feature: string; scenarios: Array<{ name: string; path: string; actions: Array<{ type: string; selector?: string; value?: string }>; assertions: string[] }> };
+  visualValidation?: { supported: boolean; passed: boolean; message: string; spec?: { feature: string; scenarios: Array<{ name: string; path: string; assertions: string[] }> }; scenarios: Array<{ name: string; passed: boolean; assertions: string[]; artifacts: Array<{ id: string; label: string; type: "screenshot" | "video" | "trace" }> }>; artifacts: Array<{ id: string; label: string; type: "screenshot" | "video" | "trace" }>; consoleErrors: string[] };
   question?: { runId: string; requestId: string; questions: Array<{ header: string; question: string; options: Array<{ label: string; description?: string }>; multiple?: boolean; custom?: boolean }> };
   specification?: { plan: string; confidence: number; links: string[]; status: "analyzing" | "ready" };
   createdAt: number;
@@ -60,6 +62,12 @@ function loadOutcomes(): Outcome[] {
     events: o.events ?? [],
     constraints: o.constraints ?? "",
     projectPath: o.projectPath ?? "",
+    visualValidation: o.visualValidation ? {
+      ...o.visualValidation,
+      scenarios: o.visualValidation.scenarios ?? [],
+      artifacts: o.visualValidation.artifacts ?? [],
+      consoleErrors: o.visualValidation.consoleErrors ?? [],
+    } : undefined,
   }));
 }
 
@@ -76,6 +84,7 @@ const STATUS_DOT: Record<OutcomeStatus, string> = {
   "Specifying": "bg-ctp-blue",
   "Ready to implement": "bg-ctp-mauve",
   "Needs input": "bg-ctp-red",
+  "Ready to validate": "bg-ctp-yellow",
   "Ready to review": "bg-ctp-green",
   "Applied": "bg-ctp-teal",
   "Failed": "bg-ctp-red",
@@ -87,6 +96,7 @@ function App() {
   const [rightWidth, setRightWidth] = useState(330);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [rightSidebar, setRightSidebar] = useState<RightSidebarView | null>(null);
+  const [evidence, setEvidence] = useState<{ type: "screenshot" | "video" | "trace"; dataUrl: string; label: string } | null>(null);
   const [outcomes, setOutcomes] = useState<Outcome[]>(loadOutcomes);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; index: number } | null>(null);
   const [renameIndex, setRenameIndex] = useState<number | null>(null);
@@ -426,27 +436,24 @@ function App() {
         if (firstExec) updateExecution(outcomeId, firstExec.id, "attention");
         return;
       }
-      setOutcomes((previous) => previous.map((item) => item.id === outcomeId ? {
-        ...item,
-        messages: [...updatedMessages, { role: "assistant", content: reply }],
-        status: "Validating",
-        events: [...item.events, makeEvent("implementation.completed", "Implementation completed; running project checks")],
-      } : item));
-
-      const validation = await window.api.validateOutcome(prepared.worktreePath);
-      const visualValidation = await window.api.visualValidateOutcome({ worktreePath: prepared.worktreePath, outcomeId });
+      setOutcomes((previous) => previous.map((item) => item.id === outcomeId ? ({ ...item, messages: [...updatedMessages, { role: "assistant", content: reply }], status: "Validating", events: [...item.events, makeEvent("implementation.completed", "Implementation completed; preparing browser validation plan")] }) : item));
       const review = await window.api.getOutcomeReview(prepared.worktreePath);
-      const passed = validation.every((result) => result.passed) && (!visualValidation.supported || visualValidation.passed);
+      let validationSpec: Outcome["validationSpec"];
+      try {
+        validationSpec = await window.api.planValidation({ outcomeId, worktreePath: prepared.worktreePath, goal: outcome.goal, acceptanceCriteria: outcome.acceptanceCriteria, diff: review.diff });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        setLiveOutput((previous) => ({ ...previous, [outcomeId]: `${previous[outcomeId] ?? ""}\nValidation planner fallback: ${message}\n` }));
+      }
       setOutcomes((previous) => previous.map((item) => item.id === outcomeId ? {
         ...item,
         prepared,
-        validation,
-        visualValidation,
+        validationSpec,
         review,
-        status: passed ? "Ready to review" : "Needs input",
-        events: [...item.events, makeEvent("validation.completed", passed ? "Checks and visual preview passed; review the changes before applying" : "A code check or visual preview failed; review and ask OpenCode to fix it")],
+        status: "Ready to validate",
+        events: [...item.events, makeEvent("validation.plan_ready", "Browser validation plan is ready for your review")],
       } : item));
-      if (firstExec) updateExecution(outcomeId, firstExec.id, passed ? "done" : "attention");
+      if (firstExec) updateExecution(outcomeId, firstExec.id, "done");
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       setOutcomes((previous) => previous.map((item) => item.id === outcomeId ? {
@@ -459,6 +466,21 @@ function App() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const runBrowserValidation = async (outcome: Outcome) => {
+    if (!outcome.prepared) return;
+    setLoading(true);
+    setOutcomes((previous) => previous.map((item) => item.id === outcome.id ? ({ ...item, status: "Validating", events: [...item.events, makeEvent("validation.started", "Running approved browser validation plan")] }) : item));
+    try {
+      const validation = await window.api.validateOutcome(outcome.prepared.worktreePath);
+      const visualValidation = await window.api.visualValidateOutcome({ worktreePath: outcome.prepared.worktreePath, outcomeId: outcome.id, goal: outcome.goal, acceptanceCriteria: outcome.acceptanceCriteria, spec: outcome.validationSpec });
+      const passed = validation.every((result) => result.passed) && (!visualValidation.supported || visualValidation.passed);
+      setOutcomes((previous) => previous.map((item) => item.id === outcome.id ? ({ ...item, validation, visualValidation, status: passed ? "Ready to review" : "Needs input", events: [...item.events, makeEvent("validation.completed", passed ? "Validation passed; evidence is ready for review" : "Validation failed; inspect evidence and retry") ] }) : item));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setOutcomes((previous) => previous.map((item) => item.id === outcome.id ? ({ ...item, status: "Needs input", events: [...item.events, makeEvent("validation.failed", message)] }) : item));
+    } finally { setLoading(false); }
   };
 
   const approveOutcome = async (outcome: Outcome) => {
@@ -807,16 +829,13 @@ function App() {
                         </summary>
                         <div className="mt-2 text-xs text-ctp-subtext1">{currentOutcome.visualValidation.message}</div>
                         {currentOutcome.visualValidation.consoleErrors.length > 0 && <pre className="mt-2 max-h-32 overflow-auto whitespace-pre-wrap text-xs text-ctp-red font-mono">{currentOutcome.visualValidation.consoleErrors.join("\n")}</pre>}
-                        {currentOutcome.visualValidation.screenshots.length > 0 && (
-                          <div className="mt-3 grid grid-cols-2 gap-2">
-                            {currentOutcome.visualValidation.screenshots.map((screenshot) => (
-                              <div key={screenshot.label} className="min-w-0">
-                                <div className="mb-1 text-[10px] uppercase tracking-wider text-ctp-overlay0">{screenshot.label}</div>
-                                <img src={screenshot.dataUrl} alt={`${screenshot.label} visual validation`} className="w-full rounded border border-ctp-surface0" />
-                              </div>
-                            ))}
+                        {currentOutcome.visualValidation.scenarios.map((scenario) => (
+                          <div key={scenario.name} className="mt-2 rounded border border-ctp-surface0 p-2">
+                            <div className={scenario.passed ? "text-ctp-green" : "text-ctp-red"}>{scenario.passed ? "✓" : "×"} {scenario.name}</div>
+                            <div className="mt-1 text-ctp-overlay0">{scenario.assertions.join(" · ")}</div>
                           </div>
-                        )}
+                        ))}
+                        {currentOutcome.visualValidation.artifacts.length > 0 && <div className="mt-3 flex flex-wrap gap-2">{currentOutcome.visualValidation.artifacts.map((artifact) => <button key={artifact.id} onClick={() => void window.api.getValidationArtifact({ outcomeId: currentOutcome.id, artifactId: artifact.id }).then((result) => setEvidence({ ...result, label: artifact.label }))} className="rounded bg-ctp-surface0 px-2 py-1 text-xs text-ctp-text hover:bg-ctp-surface1">View {artifact.label}</button>)}</div>}
                       </details>
                     )}
                     {currentOutcome.review && (
@@ -1024,9 +1043,10 @@ function App() {
               </div>}
               {rightSidebar === "timeline" && <div className="space-y-3">{currentOutcome.events.map((event) => <div key={event.id} className="flex gap-2 text-xs"><span className="shrink-0 text-ctp-overlay0 font-mono">{new Date(event.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span><span className="text-ctp-subtext1">{event.message}</span></div>)}</div>}
               {rightSidebar === "review" && <div className="space-y-3">
+                {currentOutcome.status === "Ready to validate" && currentOutcome.prepared && <div className="rounded border border-ctp-yellow/40 bg-ctp-base p-3"><div className="text-xs font-medium text-ctp-yellow">Validation plan ready</div>{currentOutcome.validationSpec ? <div className="mt-2 space-y-2">{currentOutcome.validationSpec.scenarios.map((scenario, index) => <details key={scenario.name} className="rounded border border-ctp-surface0 p-2"><summary className="cursor-pointer text-xs text-ctp-text">{index + 1}. {scenario.name}</summary><div className="mt-2 text-[11px] text-ctp-overlay0">Route: {scenario.path}</div><div className="mt-1 text-[11px] text-ctp-subtext1">{scenario.actions.map((action) => action.type + (action.selector ? ` ${action.selector}` : action.value ? ` ${action.value}` : "")).join(" → ")}</div><div className="mt-1 text-[11px] text-ctp-overlay0">{scenario.assertions.join(" · ")}</div></details>)}</div> : <div className="mt-2 text-xs text-ctp-overlay0">Planner was unavailable; Akodo will use its safe fallback plan.</div>}<button disabled={loading} onClick={() => void runBrowserValidation(currentOutcome)} className="mt-3 rounded bg-ctp-yellow px-3 py-1.5 text-xs font-medium text-ctp-crust disabled:opacity-60">{loading ? "Running validation…" : "Run validation"}</button></div>}
                 {currentOutcome.status === "Ready to review" && currentOutcome.prepared && <div className="flex gap-2"><button onClick={() => void approveOutcome(currentOutcome)} className="text-xs px-2 py-1 rounded bg-ctp-green text-ctp-crust">{currentOutcome.prepared.sourcePath === currentOutcome.prepared.worktreePath ? "Mark as applied" : "Apply changes"}</button>{currentOutcome.prepared.sourcePath !== currentOutcome.prepared.worktreePath && <button onClick={() => void discardOutcomeChanges(currentOutcome)} className="text-xs px-2 py-1 rounded bg-ctp-surface0">Discard</button>}</div>}
                 {currentOutcome.validation?.map((check) => <details key={check.command} className="rounded border border-ctp-surface0 p-2"><summary className={`text-xs cursor-pointer ${check.passed ? "text-ctp-green" : "text-ctp-red"}`}>{check.passed ? "✓" : "×"} {check.command}</summary><pre className="mt-2 max-h-40 overflow-auto whitespace-pre-wrap text-xs text-ctp-subtext1">{check.output}</pre></details>)}
-                {currentOutcome.visualValidation && <div className={`rounded border p-2 text-xs ${currentOutcome.visualValidation.passed ? "border-ctp-green/40" : "border-ctp-red/40"}`}><div className={currentOutcome.visualValidation.passed ? "text-ctp-green" : "text-ctp-red"}>{currentOutcome.visualValidation.passed ? "✓" : "×"} Visual browser validation</div><div className="mt-1 text-ctp-subtext1">{currentOutcome.visualValidation.message}</div>{currentOutcome.visualValidation.screenshots.map((screenshot) => <img key={screenshot.label} src={screenshot.dataUrl} alt={screenshot.label} className="mt-3 rounded border border-ctp-surface0" />)}</div>}
+                {currentOutcome.visualValidation && <div className={`rounded border p-2 text-xs ${currentOutcome.visualValidation.passed ? "border-ctp-green/40" : "border-ctp-red/40"}`}><div className={currentOutcome.visualValidation.passed ? "text-ctp-green" : "text-ctp-red"}>{currentOutcome.visualValidation.passed ? "✓" : "×"} Browser validation</div><div className="mt-1 text-ctp-subtext1">{currentOutcome.visualValidation.message}</div></div>}
                 {currentOutcome.review && <details className="rounded border border-ctp-surface0 p-2"><summary className="text-xs cursor-pointer">Changed files ({currentOutcome.review.changedFiles.length})</summary><pre className="mt-2 max-h-64 overflow-auto whitespace-pre-wrap text-xs text-ctp-subtext1">{currentOutcome.review.summary}{"\n"}{currentOutcome.review.changedFiles.join("\n")}{"\n\n"}{currentOutcome.review.diff}</pre></details>}
                 {!currentOutcome.validation && !currentOutcome.visualValidation && !currentOutcome.review && <div className="text-sm text-ctp-overlay0">Review appears after an agent run.</div>}
               </div>}
@@ -1037,6 +1057,7 @@ function App() {
       </div>
 
       {settingsOpen && <SettingsModal onClose={() => setSettingsOpen(false)} />}
+      {evidence && <div className="fixed inset-0 z-[350] flex items-center justify-center bg-black/70 p-8" onClick={() => setEvidence(null)}><div className="max-h-full max-w-5xl overflow-auto rounded-xl border border-ctp-surface0 bg-ctp-mantle p-4" onClick={(event) => event.stopPropagation()}><div className="mb-3 flex items-center justify-between gap-6"><span className="text-sm text-ctp-text">{evidence.label}</span><button onClick={() => setEvidence(null)} className="text-ctp-overlay0 hover:text-ctp-text">Close</button></div>{evidence.type === "video" ? <video controls autoPlay src={evidence.dataUrl} className="max-h-[75vh] max-w-full" /> : evidence.type === "screenshot" ? <img src={evidence.dataUrl} alt={evidence.label} className="max-h-[75vh] max-w-full" /> : <a download="validation-trace.zip" href={evidence.dataUrl} className="text-ctp-blue underline">Download Playwright trace</a>}</div></div>}
       {contextMenu && (
         <ContextMenu
           x={contextMenu.x}
@@ -1079,6 +1100,7 @@ function STATUS_TEXT_SHORT(status: OutcomeStatus): string {
   switch (status) {
     case "Needs input": return "needs input";
     case "Ready to review": return "ready";
+    case "Ready to validate": return "validate";
     default: return status.toLowerCase();
   }
 }

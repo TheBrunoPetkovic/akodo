@@ -2,7 +2,7 @@ import { app, BrowserWindow, dialog, ipcMain, screen } from "electron";
 import path from "path";
 import { OpenCodeServerAdapter, type OpenCodeEvent } from "./agents/opencode-server";
 import { OutcomeWorkflow, type PreparedOutcome } from "./outcomes/workflow";
-import { VisualValidator } from "./outcomes/visual-validation";
+import { VisualValidator, type BrowserValidationSpec, type ValidationAction } from "./outcomes/visual-validation";
 
 let mainWindow: BrowserWindow | null = null;
 const openCode = new OpenCodeServerAdapter(
@@ -121,6 +121,11 @@ ipcMain.handle("opencode-answer-question", (_event, input: { runId: string; requ
   return openCode.answerQuestion(input.runId, input.requestId, input.answers);
 });
 
+ipcMain.handle("outcome-plan-validation", async (_event, input: { outcomeId: string; worktreePath: string; goal: string; acceptanceCriteria: string[]; diff: string }) => {
+  const reply = await openCode.runForReply({ outcomeId: `${input.outcomeId}-validator`, projectPath: input.worktreePath, prompt: `You are an independent browser-validation planner. Do not modify files or run commands. Return ONLY valid JSON with this schema: {"feature":"string","scenarios":[{"name":"string","path":"/relative-path","actions":[{"type":"goto","value":"/path"},{"type":"click","selector":"css selector"},{"type":"fill","selector":"css selector","value":"test input"},{"type":"expectVisible","selector":"css selector"},{"type":"expectText","selector":"css selector","value":"expected text"}],"assertions":["string"]}]}. Use 1-5 scenarios, only local routes, and selectors supported by the diff. If credentials or unavailable data are required, use a visible assertion instead of inventing inputs.\n\nGoal:\n${input.goal}\n\nAcceptance criteria:\n${input.acceptanceCriteria.map((criterion) => `- ${criterion}`).join("\n")}\n\nDiff:\n${input.diff.slice(0, 24000)}` });
+  return normalizeValidationSpec(reply, input.goal);
+});
+
 ipcMain.handle("outcome-prepare", async (_event, input: { outcomeId: string; projectPath: string }) => {
   return workflow.prepare(input.outcomeId, input.projectPath);
 });
@@ -133,8 +138,12 @@ ipcMain.handle("outcome-review", async (_event, worktreePath: string) => {
   return workflow.review(worktreePath);
 });
 
-ipcMain.handle("outcome-visual-validate", async (_event, input: { worktreePath: string; outcomeId: string }) => {
-  return visualValidator.run(input.worktreePath, input.outcomeId);
+ipcMain.handle("outcome-visual-validate", async (_event, input: { worktreePath: string; outcomeId: string; goal: string; acceptanceCriteria: string[]; spec?: BrowserValidationSpec }) => {
+  return visualValidator.run(input.worktreePath, input.outcomeId, { goal: input.goal, acceptanceCriteria: input.acceptanceCriteria, spec: input.spec });
+});
+
+ipcMain.handle("outcome-validation-artifact", async (_event, input: { outcomeId: string; artifactId: string }) => {
+  return visualValidator.readArtifact(input.outcomeId, input.artifactId);
 });
 
 ipcMain.handle("outcome-approve", async (_event, input: { prepared: PreparedOutcome; outcomeName: string }) => {
@@ -144,3 +153,29 @@ ipcMain.handle("outcome-approve", async (_event, input: { prepared: PreparedOutc
 ipcMain.handle("outcome-discard", async (_event, prepared: PreparedOutcome) => {
   await workflow.discard(prepared);
 });
+
+function normalizeValidationSpec(reply: string, goal: string): BrowserValidationSpec {
+  const start = reply.indexOf("{");
+  const end = reply.lastIndexOf("}");
+  if (start < 0 || end <= start) throw new Error("Validator did not return a JSON validation plan.");
+  const parsed = JSON.parse(reply.slice(start, end + 1)) as { feature?: unknown; scenarios?: unknown };
+  if (!Array.isArray(parsed.scenarios)) throw new Error("Validator plan has no scenarios.");
+  const scenarios = parsed.scenarios.slice(0, 5).flatMap((candidate, index) => {
+    if (!candidate || typeof candidate !== "object") return [];
+    const item = candidate as { name?: unknown; path?: unknown; actions?: unknown; assertions?: unknown };
+    const path = typeof item.path === "string" && item.path.startsWith("/") ? item.path : "/";
+    const actions = Array.isArray(item.actions) ? item.actions.map(normalizeValidationAction).filter((action): action is ValidationAction => Boolean(action)).slice(0, 12) : [];
+    return [{ name: typeof item.name === "string" ? item.name.slice(0, 160) : `Scenario ${index + 1}`, path, actions: actions.length ? actions : [{ type: "goto" as const, value: path }], assertions: Array.isArray(item.assertions) ? item.assertions.filter((assertion): assertion is string => typeof assertion === "string").slice(0, 6) : [] }];
+  });
+  if (!scenarios.length) throw new Error("Validator plan contained no executable scenarios.");
+  return { feature: typeof parsed.feature === "string" ? parsed.feature.slice(0, 160) : goal || "Outcome", scenarios };
+}
+
+function normalizeValidationAction(value: unknown): ValidationAction | null {
+  if (!value || typeof value !== "object") return null;
+  const action = value as { type?: unknown; selector?: unknown; value?: unknown };
+  if (action.type === "goto" && typeof action.value === "string" && action.value.startsWith("/")) return { type: "goto", value: action.value };
+  if ((action.type === "click" || action.type === "expectVisible") && typeof action.selector === "string") return { type: action.type, selector: action.selector.slice(0, 300) };
+  if ((action.type === "fill" || action.type === "expectText") && typeof action.selector === "string" && typeof action.value === "string") return { type: action.type, selector: action.selector.slice(0, 300), value: action.value.slice(0, 500) };
+  return null;
+}
