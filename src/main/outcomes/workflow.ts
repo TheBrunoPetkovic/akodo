@@ -99,7 +99,12 @@ export class OutcomeWorkflow {
       throw new Error("This outcome is using the selected folder directly, so its changes cannot be discarded automatically.");
     }
     await this.git(prepared.sourcePath, ["worktree", "remove", "--force", prepared.worktreePath], 30_000);
-    await this.git(prepared.sourcePath, ["branch", "-D", prepared.branch]);
+    // Newer Git versions may already remove the branch with the worktree.
+    // Treat that case as a successful, idempotent discard.
+    await this.git(prepared.sourcePath, ["branch", "-D", prepared.branch]).catch((error: unknown) => {
+      if (this.errorOutput(error).includes("not found")) return;
+      throw error;
+    });
   }
 
   private async git(cwd: string, args: string[], timeout = 15_000): Promise<string> {
